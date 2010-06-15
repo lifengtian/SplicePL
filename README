@@ -1,0 +1,17 @@
+
+
+SplicePL is a computational method to detect splice junctions from
+RNA-seq reads of length greater than 100 nt. SplicePL detects splice
+junctions by a three-stage process. Initially, each read is aligned to
+the reference genome using BLAT, followed by identifying a spliced
+read across exon-exon junction.  Finally, the putative junctions are
+identified and filtered based on splice site donor/acceptor site,
+intron and flanking sequence length.
+
+
+SplicePL is written in PERL, free, open-source, and released under GNU GPL. 
+
+
+If you have any comments, please contact lifeng2@mail.med.upenn.edu
+
+
