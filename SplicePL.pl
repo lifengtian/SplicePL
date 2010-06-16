@@ -113,10 +113,13 @@ system( 'cat '
 
 ## find junctions
 
-my $junction_path = $current_path.'/junctions';
-mkdir ( $junction_path );
-&find_junctions( $temp . '/u_pair_ALL.psl', $junction_path.'/junctions.junc'  );
-&unique_junctions( $junction_path.'/junctions.junc', $junction_path.'/unique.junc' );
+my $junction_path = $current_path . '/junctions';
+mkdir($junction_path);
+&find_junctions( $temp . '/u_pair_ALL.psl',
+    $junction_path . '/junctions.junc' );
+&unique_junctions( $junction_path . '/junctions.junc',
+    $junction_path . '/unique.junc' );
+
 #&filter_splicesite ($junction_path.'/unique.junc');
 
 =head1
@@ -126,7 +129,6 @@ mkdir ( $junction_path );
   grep -h GOOD | awk '{if ($4>50) print $0}' >
   $jp / filtered_junctions date echo Done
 =cut
-
 
 #################################### Subroutines  #################################
 
@@ -141,7 +143,7 @@ mkdir ( $junction_path );
            Second is the number of subprocesses
 =cut
 
-  sub run_blat {
+sub run_blat {
 
     my ( $fasta, $db, $chunk, $tilesize, $stepsize, $minscore, $cp ) = @_;
 
@@ -574,8 +576,6 @@ sub filter_nu_reads_from_psl {
 
 }
 
-
-
 ## find junctions from a psl file
 ## col  9: strand
 ## col 10: seqID
@@ -588,10 +588,8 @@ sub filter_nu_reads_from_psl {
 ## request blocksize at least 10 bases and gap between blocks at least 20 bases for long reads
 ## may change gap size to 50bp in the future
 
-
 sub find_junctions {
-    my ($psl, $out) = @_;
-
+    my ( $psl, $out ) = @_;
 
 ## constant ###
     my $minGap       = 50;       ### in the final analysis, a gap of 50 is used.
@@ -600,8 +598,8 @@ sub find_junctions {
 
     my $first_row = 1;
 
-    open IN, $psl or croak "Error open $psl \n";
-    open OUT, '>'.$out or croak "Error open $out \n";
+    open IN,  $psl       or croak "Error open $psl \n";
+    open OUT, '>' . $out or croak "Error open $out \n";
 
     while (<IN>) {
         if ( $first_row == 1 ) {
@@ -641,33 +639,31 @@ sub find_junctions {
 
 }
 
-
 sub unique_junctions {
-    my ($in, $out ) = @_;
-    
+    my ( $in, $out ) = @_;
+
     my %h;
     my %line;
     my %l;
 
-    open IN, $in or croak "Error open $in \n";
-    open OUT, '>'.$out or croak "Error open $out \n";
+    open IN,  $in        or croak "Error open $in \n";
+    open OUT, '>' . $out or croak "Error open $out \n";
 
-while(<IN>){
-if (/^chr/ ){
-        chomp;
-        my @a=split/\t/;
-        $h{$a[0]}++;
-        $line{$a[0]}=$_;
-        $l{$a[0]}.='_'.$a[1];
-}
-}
-
-
-foreach (sort keys %h){
-        if ($h{$_} ) {
-                print OUT $line{$_},"\t",$l{$_},"\n";
+    while (<IN>) {
+        if (/^chr/) {
+            chomp;
+            my @a = split /\t/;
+            $h{ $a[0] }++;
+            $line{ $a[0] } = $_;
+            $l{ $a[0] } .= '_' . $a[1];
         }
-}
+    }
+
+    foreach ( sort keys %h ) {
+        if ( $h{$_} ) {
+            print OUT $line{$_}, "\t", $l{$_}, "\n";
+        }
+    }
 
     close IN;
     close OUT;
