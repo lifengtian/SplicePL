@@ -31,6 +31,8 @@ use Carp;
 use Cwd 'abs_path';
 use Env '@PATH';
 
+use Bio::SeqIO;
+
 my $usage =
 "perl /path/to/SplicePL.pl <fasta file name> </path/to/database> <no. of threads> <tileSize> <stepSize> <minScore>\n";
 if ( @ARGV != 6 ) {
@@ -54,15 +56,13 @@ if ( !-d $temp ) {
     mkdir($temp);
 }
 
-=head1
-&breakup_fasta( $fasta_fn, $chunk, $current_path );
+&split_fasta( $fasta_fn, $chunk, $current_path );
+exit();
 
 &run_blat( $fasta_fn, $db, $chunk, $tilesize, $stepsize, $minscore,
     $current_path );
 
 &mark_reads_status( $psl_fn, $fasta_fn );
-
-=cut
 
 ## unique-reads
 &find_status( 'u_pair', $psl_fn, $temp . '/u_pair' );
@@ -120,23 +120,16 @@ mkdir($junction_path);
 &unique_junctions( $junction_path . '/junctions.junc',
     $junction_path . '/unique.junc' );
 
-#&filter_splicesite ($junction_path.'/unique.junc');
-
-=head1
-
-  $jp / junctions $uniquejunctions $jp / junctions >
-  $jp / uniquejunctions $filter_GTAG2 $jp / uniquejunctions |
-  grep -h GOOD | awk '{if ($4>50) print $0}' >
-  $jp / filtered_junctions date echo Done
-=cut
+&filter_splicesite( $junction_path . '/unique.junc',
+    $junction_path . '/unique_GTAG.junc' );
 
 #################################### Subroutines  #################################
 
 #  = head2 Title : Usage : Function : Returns : Args :=cut
 
-=head2   runBlat
- Title   : runBlat
- Usage   : runBlat("/path/to/run_folder",6)
+=head2   run_blat
+ Title   : run_blat
+ Usage   : run_blat("/path/to/run_folder",6)
  Function: run multiple Blat processes
  Returns : 
  Args    : First is the directory
@@ -158,7 +151,6 @@ sub run_blat {
         croak "Can't find BLAT database file as $db\n";
     }
 
-######  current path #######
 ## You must run SplicePL in the same folder as fasta file
 
     unless ( -f $cp . '/' . $fasta ) {
@@ -169,7 +161,6 @@ sub run_blat {
         mkdir( $cp . '/scripts' );
     }
 
-################################# BLAT parameters #############################################
     my $repmatch = int( 1024.0 * $tilesize / $stepsize );
     my $parameters =
 "-noHead -repMatch=$repmatch -minScore=$minscore -stepSize=$stepsize -tileSize=$tilesize";
@@ -227,48 +218,40 @@ EOF
            Third is the current path
 =cut
 
-sub breakup_fasta {
-    my ( $fastafile, $numpieces, $cp ) = @_;
-    open( INFILE, $cp . '/' . $fastafile );
+sub split_fasta {
+    my ( $fasta, $chunk, $cp ) = @_;
 
-    print STDERR "counting fasta records in the $cp/$fastafile\n";
+    open IN, $cp . '/' . $fasta or croak "Error open $fasta \n";
+    my $fasta_no = 0;
+    map { $fasta_no++ if /^>/ } <IN>;
+    close IN;
+    print "No of fasta records: ", $fasta_no, "\n";
 
-    my $filesize = `grep '>' $cp/$fastafile | wc -l`;
-    chomp($filesize);
-    $filesize =~ s/\s*//;
-    print STDERR "No of fasta records: $filesize\n";
+    open IN, $cp . '/' . $fasta or croak "Error open $fasta \n";
+    my $chunk_size = int( $fasta_no / $chunk );
 
-    my $numseqs   = $filesize;
-    my $piecesize = int( $numseqs / $numpieces );
+    croak "Can't split $fasta_no to less than 2 chunks. " if $chunk <= 1;
+    $chunk_size++ if $chunk_size % 2 == 1;
 
-    if ( $piecesize < 1 ) {
-        die "Quit! Not enough pieces to break into $numpieces!";
-    }
+    foreach my $i ( 1 .. ( $chunk - 1 ) ) {
+        my $out = $cp . '/' . $fasta . "." . $i;
+        open OUT, '>' . $out or croak "Error open $out \n";
 
-    print STDERR
-      "processing in $numpieces pieces of approx $piecesize size each.\n";
-    if ( $piecesize % 2 == 1 ) {
-        $piecesize++;
-    }
-    my $bflag = 0;
-    for ( my $i = 1 ; $i < $numpieces ; $i++ ) {
-        my $outfilename = $cp . '/' . $fastafile . "." . $i;
-        open( OUTFILE, ">$outfilename" );
-        for ( my $j = 0 ; $j < $piecesize ; $j++ ) {
-            my $line = <INFILE>;
-            print OUTFILE $line;
-            $line = <INFILE>;
-            print OUTFILE $line;
+        foreach my $j ( 1 .. $chunk_size ) {
+            my $l = <IN>;
+            print OUT $l;
+            $l = <IN>;
+            print OUT $l;
         }
-        close(OUTFILE);
+        close(OUT);
     }
-    my $outfilename = $cp . '/' . $fastafile . "." . $numpieces;
-    open( OUTFILE, ">$outfilename" );
-    while ( my $line2 = <INFILE> ) {
-        print OUTFILE $line2;
-    }
-    close(OUTFILE);
-    return 0;
+
+    my $out = $cp . '/' . $fasta . "." . $chunk;
+    open OUT, '>' . $out or croak "Error open $out \n";
+
+    map { print OUT } <IN>;
+
+    close(OUT);
 }
 
 =head2 mark_reads_status
@@ -305,8 +288,6 @@ sub mark_reads_status {
     my $maxFastaID    = 0;    # in fasta file
     my $fastaTotalSeq = 0;    # total number of sequences in fasta file
     my $maxReadID     = 0;    # in psl file
-
-    print join( "\t", $psl, $status, $fasta ), "\n";
 
 ## retrieve read sequence ID
 ## we assume the read ID is like 12345a, 12345b and it is CONTINUALLY numbered from 1 to maxReadID
@@ -465,8 +446,6 @@ sub filter_paired_reads {
 
     my $maxdist = 750000;
 
-    print "filter_paired_reads $psl, $out1, $out2 \n";
-
     open IN,   $psl        or croak "Error open $psl \n";
     open OUT1, '>' . $out1 or croak "Error open $out1 \n";
     open OUT2, '>' . $out2 or croak "Error open $out2 \n";
@@ -576,25 +555,30 @@ sub filter_nu_reads_from_psl {
 
 }
 
-## find junctions from a psl file
-## col  9: strand
-## col 10: seqID
-## col 11: qSize
-## col 14: chr
-## col 18: block no
-## col 19: blockSize
-## col 21: tStart  (target start position)
-## col start from 1 (not zero)
-## request blocksize at least 10 bases and gap between blocks at least 20 bases for long reads
-## may change gap size to 50bp in the future
+=head2 
+Title :  
+Usage : 
+Function : find junctions from a psl file 
+ col  9: strand
+ col 10: seqID
+ col 11: qSize
+ col 14: chr
+ col 18: block no
+ col 19: blockSize
+ col 21: tStart  (target start position)
+ col start from 1 (not zero)
+ request blocksize at least 10 bases and gap between blocks at least 20 bases for long reads
+ may change gap size to 50bp in the future
+Returns : 
+Args :
+=cut
 
 sub find_junctions {
     my ( $psl, $out ) = @_;
 
-## constant ###
-    my $minGap       = 50;       ### in the final analysis, a gap of 50 is used.
-    my $maxGap       = 750000;
-    my $minBlockSize = 10;
+    my $minGap = 50;
+    my $maxGap = 750000;
+    my $minBlockSize;
 
     my $first_row = 1;
 
@@ -607,13 +591,14 @@ sub find_junctions {
             if ( $a[10] <= 60 && $a[10] >= 20 ) {
                 $minBlockSize = 10;
             }
-            elsif ( $a[10] > 60 ) {
-                $minBlockSize = 10;
+            elsif ( $a[10] > 60 )
+            {    #query size >=60, might need larger blocksize
+                $minBlockSize = 20;
             }
             else {
                 die "PSL file has abnormal qSize: $a[10]. Quit!";
             }
-            print STDERR "minBlockSize=$minBlockSize\n";
+            print "minBlockSize=$minBlockSize\n";
             $first_row = undef;
         }
         my @a = split /\t/;
@@ -625,19 +610,31 @@ sub find_junctions {
             foreach ( 0 .. $#tstarts - 1 ) {
                 my $gapsize =
                   $tstarts[ $_ + 1 ] + 1 - ( $tstarts[$_] + $blockSize[$_] );
-                print OUT $a[13], ":", $tstarts[$_] + $blockSize[$_], "-",
-                  $tstarts[ $_ + 1 ] + 1, "\t", $a[9], "\t", $a[8], "\t",
-                  $tstarts[ $_ + 1 ] + 1 - ( $tstarts[$_] + $blockSize[$_] ),
-                  "\n"
-                  if ( $gapsize >= $minGap
+                if (   $gapsize >= $minGap
                     && $gapsize <= $maxGap
                     && $blockSize[$_] >= $minBlockSize
-                    && $blockSize[ $_ + 1 ] >= $minBlockSize );
+                    && $blockSize[ $_ + 1 ] >= $minBlockSize )
+                {
+
+                    print OUT $a[13], ":", $tstarts[$_] + $blockSize[$_], "-",
+                      $tstarts[ $_ + 1 ] + 1, "\t", $a[9], "\t", $a[8], "\t",
+                      $tstarts[ $_ + 1 ] + 1 -
+                      ( $tstarts[$_] + $blockSize[$_] ),
+                      "\n";
+                }
             }
         }
     }
 
 }
+
+=head2 unique_junctions 
+Title : unique_junctions
+Usage : 
+Function : 
+Returns : 
+Args :
+=cut
 
 sub unique_junctions {
     my ( $in, $out ) = @_;
@@ -668,3 +665,96 @@ sub unique_junctions {
     close IN;
     close OUT;
 }
+
+### Filter the junctions with the splicing site patterns
+### 1. GT...AG
+### 2. GC...AG
+### 3. AT...AC
+###
+
+sub filter_splicesite {
+    my ( $junc, $out ) = @_;
+### Global path
+
+    my ( $splus, $sneg );
+
+    open IN,  $junc      or croak "Error open $junc \n";
+    open OUT, '>' . $out or croak "Error open $out \n";
+
+    my $hg19 = "/data/share/LifengTian/projects/RNAseq/pipeline/hg19_fasta";
+
+    my @names = (
+        1,  2,  3,  4,  5,  6,  7,  8,  9,   10,  11, 12, 13, 14,
+        15, 16, 17, 18, 19, 20, 21, 22, 'X', 'Y', 'M'
+    );
+
+    my %seq_obj;    # store the reference to sequence objects
+
+### Create Seq object for each chromosome
+    foreach (@names) {
+        my $file = $hg19 . '/chr' . $_ . '.fa';
+
+        print "Processing $file\n";
+        my $s = Bio::SeqIO->new(
+            -file   => $file,
+            -format => 'Fasta'
+        );
+
+        $seq_obj{ 'chr' . $_ } = $s->next_seq()->seq();
+    }
+
+### We were not analyzing strand-specific RNA-seq data, so
+### have to search both plus and minus strand for
+### splicing site patterns
+
+    while (<IN>) {
+        chomp;
+        my @a = split /\s+/;
+        my ( $chr, $start, $end ) = split /[:-]/, $a[0];
+        my $strand = $a[2];
+        my $s;
+        $splus =
+            substr( $seq_obj{$chr}, $start, 2 )
+          . substr( $seq_obj{$chr}, $end - 3, 2 );
+        $sneg = &revcom($splus);
+
+        #print $splus,"\n",$sneg;<STDIN>;
+        #print STDERR ">",$a[0],"\n",$splus,"\n";
+
+        if ( $splus =~ /^GTAG$/i ) {
+            print OUT $_, "\tGOODSITEPLUS" . $strand . "GTAGSITE\n";
+        }
+        elsif ( $sneg =~ /^GTAG$/i ) {
+            print OUT $_, "\tGOODSITENEG" . $strand . "GTAGSITE\n";
+        }
+        elsif ( $splus =~ /^GCAG$/i ) {
+            print OUT $_, "\tGOODSITEPLUS" . $strand . "GCAGSITE\n";
+        }
+        elsif ( $sneg =~ /^GCAG$/i ) {
+            print OUT $_, "\tGOODSITENEG" . $strand . "GCAGSITE\n";
+        }
+        elsif ( $splus =~ /^ATAC$/i ) {
+            print OUT $_, "\tGOODSITEPLUS" . $strand . "ATACSITE\n";
+        }
+        elsif ( $sneg =~ /^ATAC$/i ) {
+            print OUT $_, "\tGOODSITENEG" . $strand . "ATACSITE\n";
+        }
+        else {
+            print OUT $_, "\tBADSITE$strand\n";
+        }
+    }
+
+    close IN;
+    close OUT;
+}
+
+sub revcom {
+    my ($seq) = @_;
+
+    my $r = reverse($seq);
+    $r =~ tr/atcgATCG/tagcTAGC/;
+
+    return $r;
+
+}
+
