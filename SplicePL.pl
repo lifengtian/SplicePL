@@ -33,33 +33,101 @@ use Env '@PATH';
 
 use Bio::SeqIO;
 
-my $usage =
-"perl /path/to/SplicePL.pl <fasta file name> </path/to/database> <no. of threads> <tileSize> <stepSize> <minScore>\n";
-if ( @ARGV != 6 ) {
-    die $usage;
+
+require Getopt::Long;
+my $USAGE   = '';
+my $VERSION = '';
+my $FORWARD_FILENAME = undef;
+my $REVERSE_FILENAME = undef;
+my $GENOME_DIR = undef;
+my $GENOME_2BIT_FILENAME = undef; 
+my $PROCESSES = 1;
+my $TILESIZE = 11;
+my $STEPSIZE = 5;
+my $MINSCORE = 30;
+my $FLANKSIZE = 10;
+my $INTRON_MIN = 50;
+my $INTRON_MAX = 750000;
+
+my $getopt  = Getopt::Long::GetOptions(	
+        'help|usage'    => \$USAGE,
+	'forward=s'     => \$FORWARD_FILENAME,
+	'reverse=s'     => \$REVERSE_FILENAME,
+	'genome=s'      => \$GENOME_DIR,
+	'genome_2bit=s' =>\$GENOME_2BIT_FILENAME,
+	'processes=i'   => \$PROCESSES,
+	'tilesize=i'    => \$TILESIZE,
+	'stepsize=i'    => \$STEPSIZE,
+	'minscore=i'    => \$MINSCORE,
+	'flanksize=i'   => \$FLANKSIZE,
+	'intron_min=i'  => \$INTRON_MIN,
+	'intron_max=i'  => \$INTRON_MAX,
+	);
+
+print $USAGE;
+
+
+
+# commandline usage
+if ( $USAGE or not $GENOME_DIR or not $GENOME_2BIT_FILENAME or not $FORWARD_FILENAME or not $REVERSE_FILENAME ) {
+	print <<"END_USAGE";
+Usage: $0 
+
+--help                  Shows this help message
+--forward=name          Name of forward read file, fasta file only
+--reverse=name          Name of reverse read file, fasta file only
+--genome=dir      Directory of genome sequences for individual chromosome, ie, chr1.fa, chr2.fa, ..., chr22.fa, chrX.fa, chrY.fa, chrM.fa
+--genome_2bit=name      Name of genome sequence file in 2bit format
+--processes             Number of processes for BLAT
+--tilesize              Number of tileSize
+--stepsize              Number of stepSize
+--minscore              Number of minScore
+--flanksize             Minimum length of splice junction flanking sequence
+--intronsize                Minimum length of intron
+
+
+END_USAGE
+	exit(1);
 }
 
-my $fasta_fn = $ARGV[0];    # input fasta file
-my $db       = $ARGV[1];
-my $chunk    = $ARGV[2];    # number of threads to parallelize
-my $tilesize = $ARGV[3];    # BLAT tileSize
-my $stepsize = $ARGV[4];    # BLAT stepSize
-my $minscore = $ARGV[5];    # BLAT minScore
+print "FORWARD_FILENAME = $FORWARD_FILENAME 
+REVERSE_FILENAME = $REVERSE_FILENAME
+GENOME_DIR = $GENOME_DIR 
+GENOME_2BIT_FILENAME = $GENOME_2BIT_FILENAME 
+PROCESSES = $PROCESSES
+TILESIZE = $TILESIZE
+STEPSIZE = $STEPSIZE
+MINSCORE = $MINSCORE
+FLANKSIZE = $FLANKSIZE
+INTRON_MIN = $INTRON_MIN
+INTRON_MAX = $INTRON_MAX
+";
 
 ############################### Check Executables, dababase etc. #############################
 
 my $current_path = abs_path();
 my $temp         = $current_path . '/temp';
-my $psl_fn       = $temp . '/' . $fasta_fn . '.psl';
+my $fasta_fn    = $temp.'/pairedreads.fa';
+my $psl_fn       = $temp . '/pairedreads.psl';
 
 if ( !-d $temp ) {
     mkdir($temp);
 }
 
-&split_fasta( $fasta_fn, $chunk, $current_path );
-exit();
+exit(0);
 
-&run_blat( $fasta_fn, $db, $chunk, $tilesize, $stepsize, $minscore,
+### have to fix is_fasta and prepare_pairedreads next!!!
+if ( is_fasta($current_path.'/'.$FORWARD_FILENAME,  $current_path.'/'.$REVERSE_FILENAME) ) {
+       &prepare_pairedreads($current_path.'/'.$FORWARD_FILENAME,  $current_path.'/'.$REVERSE_FILENAME, $fasta_fn);
+} else {
+    croak "Not fasta file!\n";
+}
+
+
+
+&split_fasta( $fasta_fn, $PROCESSES, $current_path );
+
+&run_blat( $fasta_fn, $GENOME_DIR.'/'.$GENOME_2BIT_FILENAME, $PROCESSES, $TILESIZE, $STEPSIZE, $MINSCORE,
     $current_path );
 
 &mark_reads_status( $psl_fn, $fasta_fn );
@@ -116,7 +184,8 @@ system( 'cat '
 my $junction_path = $current_path . '/junctions';
 mkdir($junction_path);
 &find_junctions( $temp . '/u_pair_ALL.psl',
-    $junction_path . '/junctions.junc' );
+    $junction_path . '/junctions.junc' , $INTRON_MIN, $INTRON_MAX, $FLANKSIZE );
+    
 &unique_junctions( $junction_path . '/junctions.junc',
     $junction_path . '/unique.junc' );
 
@@ -574,52 +643,49 @@ Args :
 =cut
 
 sub find_junctions {
-    my ( $psl, $out ) = @_;
-
-    my $minGap = 50;
-    my $maxGap = 750000;
-    my $minBlockSize;
+    my ( $psl, $out, $mingap, $maxgap, $minblocksize ) = @_;
 
     my $first_row = 1;
 
     open IN,  $psl       or croak "Error open $psl \n";
     open OUT, '>' . $out or croak "Error open $out \n";
 
+    
     while (<IN>) {
         if ( $first_row == 1 ) {
             my @a = split /\t/;
             if ( $a[10] <= 60 && $a[10] >= 20 ) {
-                $minBlockSize = 10;
+                $minblocksize = 10 if $minblocksize < 20;
             }
             elsif ( $a[10] > 60 )
             {    #query size >=60, might need larger blocksize
-                $minBlockSize = 20;
+                $minblocksize = 20 if $minblocksize < 20;
             }
             else {
                 die "PSL file has abnormal qSize: $a[10]. Quit!";
             }
-            print "minBlockSize=$minBlockSize\n";
+            print "minblocksize=$minblocksize\n";
             $first_row = undef;
         }
         my @a = split /\t/;
         my @tstarts = split /,/, $a[20];
 
-        my @blockSize = split /,/, $a[18];
+        my @blocksize = split /,/, $a[18];
         my $blockno = $a[17];
         if ( $blockno > 1 ) {
             foreach ( 0 .. $#tstarts - 1 ) {
                 my $gapsize =
-                  $tstarts[ $_ + 1 ] + 1 - ( $tstarts[$_] + $blockSize[$_] );
-                if (   $gapsize >= $minGap
-                    && $gapsize <= $maxGap
-                    && $blockSize[$_] >= $minBlockSize
-                    && $blockSize[ $_ + 1 ] >= $minBlockSize )
+                  $tstarts[ $_ + 1 ] + 1 - ( $tstarts[$_] + $blocksize[$_] );
+                if (   $gapsize >= $mingap
+                    && $gapsize <= $maxgap
+                    && $blocksize[$_] >= $minblocksize
+                    && $blocksize[ $_ + 1 ] >= $minblocksize )
                 {
 
-                    print OUT $a[13], ":", $tstarts[$_] + $blockSize[$_], "-",
+                    print OUT $a[13], ":", $tstarts[$_] + $blocksize[$_], "-",
                       $tstarts[ $_ + 1 ] + 1, "\t", $a[9], "\t", $a[8], "\t",
                       $tstarts[ $_ + 1 ] + 1 -
-                      ( $tstarts[$_] + $blockSize[$_] ),
+                      ( $tstarts[$_] + $blocksize[$_] ),
                       "\n";
                 }
             }
@@ -758,3 +824,16 @@ sub revcom {
 
 }
 
+
+sub prepare_pairedreads {
+        my ( $f, $r, $out ) = @_;
+        
+        open F, $f or croak "Error open $f $!";
+    
+    #check fasta
+    #combine each line of fasta to a string, get rid of newline, check characters etc.
+    #renumber the fasta record ID, make it like 232f followed by 232r
+    #output it to a file pairedreads.fa
+    #DONE
+    
+}
