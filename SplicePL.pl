@@ -31,7 +31,7 @@ use Carp;
 use Cwd 'abs_path';
 use Env '@PATH';
 
-use Bio::SeqIO;
+#use Bio::SeqIO;
 
 
 require Getopt::Long;
@@ -54,7 +54,7 @@ my $getopt  = Getopt::Long::GetOptions(
 	'forward=s'     => \$FORWARD_FILENAME,
 	'reverse=s'     => \$REVERSE_FILENAME,
 	'genome=s'      => \$GENOME_DIR,
-	'genome_2bit=s' =>\$GENOME_2BIT_FILENAME,
+	'genome_2bit=s' => \$GENOME_2BIT_FILENAME,
 	'processes=i'   => \$PROCESSES,
 	'tilesize=i'    => \$TILESIZE,
 	'stepsize=i'    => \$STEPSIZE,
@@ -64,30 +64,31 @@ my $getopt  = Getopt::Long::GetOptions(
 	'intron_max=i'  => \$INTRON_MAX,
 	);
 
-print $USAGE;
 
 
 
 # commandline usage
-if ( $USAGE or not $GENOME_DIR or not $GENOME_2BIT_FILENAME or not $FORWARD_FILENAME or not $REVERSE_FILENAME ) {
-	print <<"END_USAGE";
-Usage: $0 
-
---help                  Shows this help message
---forward=name          Name of forward read file, fasta file only
---reverse=name          Name of reverse read file, fasta file only
---genome=dir      Directory of genome sequences for individual chromosome, ie, chr1.fa, chr2.fa, ..., chr22.fa, chrX.fa, chrY.fa, chrM.fa
---genome_2bit=name      Name of genome sequence file in 2bit format
---processes             Number of processes for BLAT
---tilesize              Number of tileSize
---stepsize              Number of stepSize
---minscore              Number of minScore
---flanksize             Minimum length of splice junction flanking sequence
---intronsize                Minimum length of intron
+&usage(), exit(1) if ( $USAGE ) ;
 
 
-END_USAGE
-	exit(1);
+if ( not $GENOME_DIR or not $GENOME_2BIT_FILENAME or not $FORWARD_FILENAME or not $REVERSE_FILENAME ) {
+if ( not $GENOME_DIR ) {
+    print "Set --genome=/path/to/fasta .\n";
+} 
+
+if (  not $GENOME_2BIT_FILENAME ) {
+         print "Set --genome_2bit=2bit_file_name \n";
+         } 
+         
+         if (  not $FORWARD_FILENAME ) {
+             print "Set --forward=/forward_read_file_name \n";
+             } 
+             
+             if ( not $REVERSE_FILENAME ) {
+                 print "--reverse=/reverse_read_file_name \n";
+             }
+&usage();
+exit(1);
 }
 
 print "FORWARD_FILENAME = $FORWARD_FILENAME 
@@ -103,6 +104,15 @@ INTRON_MIN = $INTRON_MIN
 INTRON_MAX = $INTRON_MAX
 ";
 
+### let's check genome_2bit size and total available physical memory
+if ( -f $GENOME_DIR.'/'.$GENOME_2BIT_FILENAME ) {
+    my $filesize = -s $GENOME_DIR.'/'.$GENOME_2BIT_FILENAME ;
+    check_total_memory();
+} else {
+        croak "$GENOME_DIR.'/'.$GENOME_2BIT_FILENAME does NOT exist. Exit!\n";
+}
+
+exit();
 ############################### Check Executables, dababase etc. #############################
 
 my $current_path = abs_path();
@@ -739,7 +749,7 @@ sub unique_junctions {
 ###
 
 sub filter_splicesite {
-    my ( $junc, $out ) = @_;
+    my ( $junc, $out, $dir ) = @_;
 ### Global path
 
     my ( $splus, $sneg );
@@ -747,26 +757,28 @@ sub filter_splicesite {
     open IN,  $junc      or croak "Error open $junc \n";
     open OUT, '>' . $out or croak "Error open $out \n";
 
-    my $hg19 = "/data/share/LifengTian/projects/RNAseq/pipeline/hg19_fasta";
 
     my @names = (
         1,  2,  3,  4,  5,  6,  7,  8,  9,   10,  11, 12, 13, 14,
         15, 16, 17, 18, 19, 20, 21, 22, 'X', 'Y', 'M'
     );
 
-    my %seq_obj;    # store the reference to sequence objects
+    my %seq_obj = undef ;    # store the reference to sequence objects
 
 ### Create Seq object for each chromosome
-    foreach (@names) {
-        my $file = $hg19 . '/chr' . $_ . '.fa';
+    foreach my $chr (@names) {
+        my $file = $dir . '/chr' . $chr . '.fa';
 
-        print "Processing $file\n";
-        my $s = Bio::SeqIO->new(
-            -file   => $file,
-            -format => 'Fasta'
-        );
-
-        $seq_obj{ 'chr' . $_ } = $s->next_seq()->seq();
+        print "Loading chromosome $file\n";
+        open CHR, $file or croak "Error open $file \n";
+        my $id = <CHR>;
+        croak "First line of fasta file $file doesn't start with >\n" unless ( $id =~/^>/ );
+        my $seq = '';
+        while ( <CHR> ){
+            chomp;
+            $seq .= $_;
+        }
+        $seq_obj{ 'chr' . $chr } = $seq ;
     }
 
 ### We were not analyzing strand-specific RNA-seq data, so
@@ -836,4 +848,61 @@ sub prepare_pairedreads {
     #output it to a file pairedreads.fa
     #DONE
     
+}
+
+
+# Retrieves the memory installed on this machine
+sub check_total_memory {
+    
+sub memerror {
+		croak "Unable to determine total memory\n";
+	}
+	
+
+    my ($physical_memory,$swap_memory,$duflags);
+	my $os = `uname`;
+
+		if ($os =~ /Linux/) {
+			$physical_memory = `free -b | grep Mem | awk '{print \$2}'` or memerror;
+		} elsif ($os =~ /Darwin/) {
+			$physical_memory = `sysctl -n hw.memsize` or memerror;
+		} elsif ($os =~ /NetBSD|OpenBSD/) {
+			$physical_memory = `sysctl -n hw.physmem` or memerror;
+			if ($physical_memory < 0) {
+				$physical_memory = `sysctl -n hw.physmem64` or memerror;
+			}
+			
+		} elsif ($os =~ /BSD/) {
+			$physical_memory = `sysctl -n hw.realmem`;
+			
+		} elsif ($os =~ /SunOS/) {
+			$physical_memory = `/usr/sbin/prtconf | grep Memory | cut -f 3 -d ' '` or memerror;
+			chomp($physical_memory);
+			$physical_memory = $physical_memory*1024*1024;
+		}
+	
+	chomp($physical_memory);
+	print "Total physical memory is ", int ($physical_memory/1024/1024/1024 ), "GB\n";
+}
+
+
+	
+sub usage {
+	print <<"END_USAGE";
+Usage: $0 
+
+--help                  Shows this help message
+--forward=name          Name of forward read file, fasta file only
+--reverse=name          Name of reverse read file, fasta file only
+--genome=dir            Directory of genome sequences for individual chromosome, ie, chr1.fa, chr2.fa, ..., chr22.fa, chrX.fa, chrY.fa, chrM.fa
+--genome_2bit=name      Name of genome sequence file in 2bit format
+--processes             Number of processes for BLAT (default is 1)
+--tilesize              Number of tileSize (default is 11)
+--stepsize              Number of stepSize (default is 5)
+--minscore              Number of minScore (default is 30)
+--flanksize             Minimum length of splice junction flanking sequence (default is 10)
+--intron_min            Minimum length of intron (default is 50)
+--intron_max            Maximum length of intron (default is 750000)
+
+END_USAGE
 }
