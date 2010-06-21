@@ -1,12 +1,12 @@
 #!/usr/bin/perl 
 
-# Perl module for SplicePL
+# PERL package for SplicePL
 #
 # Please direct questions and support issues to <lifeng2@mail.med.upenn.edu>
 #
 # Copyright Lifeng Tian
 #
-# You may distribute this module under the same terms as perl itself
+# You may distribute this module under the same terms as PERL itself
 
 # POD documentation - main docs before the code
 
