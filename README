@@ -1,17 +1,63 @@
 
+INTRODUCTION
 
-SplicePL is a computational method to detect splice junctions from
-RNA-seq reads of length greater than 100 nt. SplicePL detects splice
-junctions by a three-stage process. Initially, each read is aligned to
-the reference genome using BLAT, followed by identifying a spliced
-read across exon-exon junction.  Finally, the putative junctions are
-identified and filtered based on splice site donor/acceptor site,
-intron and flanking sequence length.
+	SplicePL is developed to detect de novo splice junctions from paired-end
+	human RNA-seq data, especially from reads longer than 75 nt. With these long reads, 
+	novel exon-exon junctions can be directly identified by aligning reads to the 
+	reference genome using algorithms such as BLAT (Kent, 2002) or SSAHA2 (Ning et al., 2001), 
+	rather than splitting reads into segments as in TopHat (Trapnell et al., 2009) and SpliceMap (Au et al., 2010).
+
+	SplicePL detects splice junctions by a three-stage process. Initially, each read is aligned to
+	the reference genome using BLAT, followed by identifying  spliced
+	reads across exon-exon junction.  Finally, the putative junctions are
+	identified and filtered based on splice site donor/acceptor site,
+	intron and flanking sequence length.
+
+	In summary, SplicePL is mainly a simple BLAT parser and splice site filter. It is written in Perl, packaged as
+	a perl module to facilitate testing and installation. 
 
 
-SplicePL is written in PERL, free, open-source, and released under GNU GPL. 
+PREREQUISITE
+	Before running  SplicePL, please make sure:
+	1. Either BLAT or gfServer/gfClient binaries is installed. The most recent version (Jun 25, 2010) is 34x7 .
+	   You also need faToTwoBit, which is part of BLAT.
+	   For BLAT installation, please go to http://genome.ucsc.edu/FAQ/FAQblat.html#blat3
+	   
+	2. fasta files for individual human chromosomes were downloaded, and in the same folder, a 2BIT format file is prepared 
+	from chr1.fa, chr2.fa, ..., chr22.fa, chrX.fa, chrY.fa,and chrM.fa. You can download the hg19 assembly ( or The Feb. 2009 
+	human reference sequence (GRCh37) ) from http://hgdownload.cse.ucsc.edu/goldenPath/hg19/bigZips/
+	
+ 
+	3. you know exact number of RAM and processors in your LINUX server. 
 
 
-If you have any comments, please contact lifeng2@mail.med.upenn.edu
+HOW TO USE IT
+	SplicePL.pm is designed to run on a LINUX server with large memory and multiple CPUs. SplicePL is  tested on Ubuntu 10.04 and Red Hat 4.1.2-46.
+
+	It requires 3GB of RAM to load the hg19 assembly to the memory. To run multiple BLAT processes (n=N), you need to have at least 4.0*N GB of RAM. 
+ 
+
+	You run SplicePL.pm within a LINUX terminal. 
+	1. (Recommended) Use the BLAT program which uses about 4.0GB of RAM for human genome hg19, including index (1.3GB) plus sequences (3GB):
+	perl SplicePL/SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome=/data/share/db/human/hg19.fa.masked --genome_2bit_filename=hg19.fa.masked.2bit --flanksize=10 --processes=6
+	
+	2. (optional, not recommended) Use the gfServer/gfClient programs which use 1.2GB of RAM for human genome hg19. In the alignment stage, it will load needed sequences into RAM:
+	perl SplicePL/SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome=/data/share/db/human/hg19.fa.masked --genome_2bit_filename=hg19.fa.masked.2bit --flanksize=10 --processes=14 --gfServer
+	
+OUTPUT
+	The alignment output is stored in the 'temp' directory; the junction files are in the 'output' directory. 
+	
+	The first column in the junction file is the splice junction. It has three parts:
+	1. chromosome name
+	2. last nucleotide of the donnor exon
+	3. first nucleotide of the acceptor exon
+	For example, it may look like    chr10:102286311-102286732
+	
+
+ACKNOWLEDGEMENT
+	Using BLAT, instead of short reads aligner such as Bowtie, to align the long reads to the genome was initially suggested by Greg Grant. 
+	
+CONTACT
+	If you have any comments and questions about SplicePL, please contact lifeng2@mail.med.upenn.edu
 
 

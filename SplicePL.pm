@@ -11,22 +11,43 @@
 # POD documentation - main docs before the code
 
 =head1 NAME
-
+	SplicePL.pm -- Detect splice junctions from paired-end RNA-seq data
+	
+=head1 SYNOPSIS
+	perl SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome=/data/share/db/human/hg19.fa.masked --genome_2bit_filename=hg19.fa.masked.2bit --flanksize=10 --processes=6
+	
 =head1 DESCRIPTION
+	SplicePL.pm is designed to run on a LINUX server with large memory and multiple CPUs.  
+	It requires 3GB of RAM to load the human genome sequence. To run multiple BLAT processes (n=N), you need to have at least 4.0*N GB of RAM. 
+	Before running SplicePL.pm, please make sure 
+	1. you know exact number of RAM and processors in your LINUX server.
+	2. you installed BLAT binary. If you haven't, please go to http://genome.ucsc.edu/FAQ/FAQblat.html#blat3 
+
+	You run SplicePL.pm within a LINUX terminal. 
+	1. (Recommended) Use the BLAT program which uses about 4.0GB of RAM for human genome hg19, including index (1.3GB) plus sequences (3GB):
+	perl SplicePL/SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome=/data/share/db/human/hg19.fa.masked --genome_2bit_filename=hg19.fa.masked.2bit --flanksize=10 --processes=6
+	
+	2. (optional, not recommended) Use the gfServer/gfClient programs which use 1.2GB of RAM for human genome hg19. In the alignment stage, it will load needed sequences into RAM:
+	perl SplicePL/SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome=/data/share/db/human/hg19.fa.masked --genome_2bit_filename=hg19.fa.masked.2bit --flanksize=10 --processes=14 --gfServer
+	
+	The alignment output is stored in the 'temp' directory; the junction files are in the 'output' directory. 
 
 
-=head1 Check List 
-Before running the SplicePL, make sure:
-1. BLAT binary is in the PATH environment variable.
-2. SplicePL is in the PATH, and executable!
-3. BLAT database file, i.e., the xxx.2bit file
+=head1 PREREQUISITES  
+	Before running  SplicePL, please make sure:
+	1. Either BLAT or gfServer/gfClient binaries is installed. The most recent version (Jun 25, 2010) is 34x7 .
+	2. fasta files for individual human chromosomes were downloaded, and in the same folder, a 2BIT format file is prepared from chr1.fa, chr2.fa, ..., chr22.fa, chrX.fa, chrY.fa,and chrM.fa. 
 
-Users need to make sure that several binaries are installed, including BLAT, 
-databases including
-1. genome/chr1 to chrM.fa
-2. genome/genome.2bit
 
+=head1 FEEDBACK
+
+=head1 AUTHOR - Lifeng Tian
+
+Email: lifeng2@mail.med.upenn.edu
+	
 =cut 
+
+# Let the code begin ...
 
 package SplicePL;
 
@@ -58,6 +79,9 @@ sub run
     my $INTRON_MIN           = 50;
     my $INTRON_MAX           = 750000;
     my $REPMATCH             = undef;
+    my $GFSERVER = undef;
+    my $SERVER = 'localhost';
+    my $PORT = 5000;
 
     my $getopt =
       Getopt::Long::GetOptions(
@@ -65,7 +89,7 @@ sub run
                                'forward=s'     => \$FORWARD_FILENAME,
                                'reverse=s'     => \$REVERSE_FILENAME,
                                'genome=s'      => \$GENOME_DIR,
-                               'genome_2bit=s' => \$GENOME_2BIT_FILENAME,
+                               'genome_2bit_filename=s' => \$GENOME_2BIT_FILENAME,
                                'processes=i'   => \$PROCESSES,
                                'tilesize=i'    => \$TILESIZE,
                                'stepsize=i'    => \$STEPSIZE,
@@ -73,7 +97,10 @@ sub run
                                'flanksize=i'   => \$FLANKSIZE,
                                'intron_min=i'  => \$INTRON_MIN,
                                'intron_max=i'  => \$INTRON_MAX,
-                               'repmatch'      => \$REPMATCH
+                               'repmatch'      => \$REPMATCH,
+                               'gfServer' =>\$GFSERVER,
+                               'server=s' => \$SERVER,
+                                'port=i' => \$PORT,
                               );
 
     # commandline usage
@@ -92,7 +119,7 @@ sub run
 
         if (not $GENOME_2BIT_FILENAME)
         {
-            print "Set --genome_2bit=2bit_file_name \n";
+            print "Set --genome_2bit_filename=xxx.2bit \n";
         }
 
         if (not $FORWARD_FILENAME)
@@ -122,6 +149,10 @@ MINSCORE = $MINSCORE
 FLANKSIZE = $FLANKSIZE
 INTRON_MIN = $INTRON_MIN
 INTRON_MAX = $INTRON_MAX
+REPMATCH = $REPMATCH 
+GFSERVER = $GFSERVER
+SERVER = $SERVER
+PORT = $PORT
 \n";
 
     my $error = undef;
@@ -138,29 +169,34 @@ INTRON_MAX = $INTRON_MAX
           unless -f $GENOME_DIR . '/chr' . $chr . '.fa';
     }
 
-    ### check executable for BLAT
-    my $blat_bin = 'blat';
-    unless (grep -x "$_/$blat_bin", @PATH)
-    {
-        $error .= "Can't find blat executables in @PATH\n";
-    }
+
 
 ### check genome_2bit size and total available physical memory
-    if (-f $GENOME_DIR . '/' . $GENOME_2BIT_FILENAME)
+
+    if (-f $GENOME_DIR . '/' . $GENOME_2BIT_FILENAME )
     {
         my $filesize = -s $GENOME_DIR . '/' . $GENOME_2BIT_FILENAME;
         mlog("== MEMORY ==", $GENOME_DIR . '/' . $GENOME_2BIT_FILENAME,
              " size ", int($filesize / 1024 / 1024), "MB");
         my $total_mem       = int(&check_total_memory() / 1024 / 1024 / 1024);
-        my $one_process_mem = int($filesize * 6 / 1024 / 1024 / 1024);
+        my $one_process_mem ;
+        
+         if ( $GFSERVER ) {
+             $one_process_mem = $filesize * 2 / 1024 / 1024 / 1024;
+         } else {
+             $one_process_mem = $filesize * 6 / 1024 / 1024 / 1024;
+         }
+        
         mlog("== MEMORY == Total physical memory is $total_mem GB");
-        if ($total_mem <= 3)
+        mlog("== MEMORY == Each process needs $one_process_mem GB");
+        
+        if ($total_mem <= $one_process_mem)
         {
             mlog(
-                "== MEMORY == Total physical memory < 3G , not enough to load the genome. Exit"
+                "== MEMORY == Total physical memory < $one_process_mem , not enough to load the genome. Exit"
             );
             exit(1);
-        }
+        } 
         if (!$PROCESSES)
         {
             $PROCESSES = int($total_mem / $one_process_mem);
@@ -199,8 +235,11 @@ INTRON_MAX = $INTRON_MAX
     my $current_path = abs_path();
     my $temp         = $current_path . '/temp';
     my $fasta_fn     = $current_path . '/pairedreads.fa';
-    my $psl_fn       = $temp . '/pairedreads.psl';
-
+    my $psl_blat_fn       = $temp . '/pairedreads_blat.psl';
+    my $psl_gfClient_fn = $temp.'/pairedreads_gfClient.psl';
+    my $psl_fn = undef;
+    
+    
     if (!-d $temp)
     {
         mkdir($temp);
@@ -212,7 +251,7 @@ INTRON_MAX = $INTRON_MAX
 
 ### Start the pipeline here
     &mcall(
-           "PREPARE PARED READS",
+           "PREPARE PAIRED READS",
            \&prepare_paired_reads,
            $current_path . '/' . $FORWARD_FILENAME,
            $current_path . '/' . $REVERSE_FILENAME,
@@ -221,6 +260,36 @@ INTRON_MAX = $INTRON_MAX
 
     &mcall("SPLIT FASTA", \&split_fasta, $fasta_fn, $PROCESSES, $current_path);
 
+if ( $GFSERVER ) {
+        ### check executable for gfServer and gfClient
+    my $gfServer = 'gfServer';
+    my $gfClient = 'gfClient';
+    
+    unless (grep -x "$_/$gfServer", @PATH)
+    {
+        $error .= "Can't find gfServer executables in @PATH\n";
+    }
+    
+        unless (grep -x "$_/$gfClient", @PATH)
+    {
+        $error .= "Can't find gfClient executables in @PATH\n";
+    }
+    
+    
+    $psl_fn = $psl_gfClient_fn ;
+    &mcall("RUN_GFSERVER",\&run_gfServer, $GENOME_DIR.'/'.$GENOME_2BIT_FILENAME, $PROCESSES, $TILESIZE, $STEPSIZE, $REPMATCH, $SERVER, $PORT, $current_path);
+    &mcall("RUN_GFCLIENT",\&run_gfClient, $fasta_fn, $fasta_fn.".gfclient.psl",$PROCESSES, $MINSCORE, $SERVER, $PORT, $current_path);
+    &mcall("MARK READS ALIGNMENT STATUS FROM GFCLIENT OUTPUT",\&mark_reads_status, $psl_fn, $fasta_fn);
+} else {
+        ### check executable for BLAT
+    my $blat_bin = 'blat';
+    unless (grep -x "$_/$blat_bin", @PATH)
+    {
+        $error .= "Can't find blat executables in @PATH\n";
+    }
+    
+    $psl_fn = $psl_blat_fn;
+    
     &mcall(
            "RUN BLAT", \&run_blat,
            $fasta_fn,  $GENOME_DIR . '/' . $GENOME_2BIT_FILENAME,
@@ -228,7 +297,9 @@ INTRON_MAX = $INTRON_MAX
            $STEPSIZE,  $MINSCORE,
            $REPMATCH,  $current_path
           );
-
+          &mcall("MARK READS ALIGNMENT STATUS",
+           \&mark_reads_status, $psl_fn, $fasta_fn);
+}
     &mcall("MARK READS ALIGNMENT STATUS",
            \&mark_reads_status, $psl_fn, $fasta_fn);
 
@@ -325,17 +396,19 @@ INTRON_MAX = $INTRON_MAX
 #################################### Other Subroutines  #################################
 
 =head2   run_blat
- Title   : run_blat
- Usage   : 
- Function: run multiple Blat processes on a server
- Returns : 
- Args    : 
+ Title   :  run_blat
+ Usage   :  
+ Function:  run multiple Blat processes on a server
+ Returns :  
+ Args    :  First string is the absolute path to the input fasta file
+ 			Second string is the absolute path to the input 2bit file
+
 =cut
 
 sub run_blat
 {
 
-    my ($fasta, $db, $chunk, $tilesize, $stepsize, $minscore, $rep, $cp) = @_;
+    my ($fasta, $db_2bit, $chunk, $tilesize, $stepsize, $minscore, $rep, $cp) = @_;
     my $repmatch = int(1024.0 * $tilesize / $stepsize);
     my $parameters;
 
@@ -351,16 +424,16 @@ sub run_blat
     }
 
 ######  check the databases for BLAT
-    unless (-f $db)
+    unless (-f $db_2bit)
     {
-        croak "Can't find BLAT database file as $db\n";
+        croak "Can't find BLAT database file as $db_2bit\n";
     }
 
 ## You must run SplicePL in the same folder as fasta file
 
     unless (-f $fasta)
     {
-        croak "Can't find $fasta file in $cp. Exit!";
+        croak "Can't find $fasta file. Exit!";
     }
 
     if (!-d $cp . '/scripts')
@@ -370,13 +443,13 @@ sub run_blat
 
     for (my $i = 1 ; $i <= $chunk ; $i++)
     {
-        my $command = <<EOF;
+        my $command = <<TEMPLATE;
 #!/bin/sh' 
 date >> $cp/run.$i.log
-echo blat $db $parameters $fasta.$i $fasta.$i.out >> $cp/run.$i.log
-blat $db $parameters $fasta.$i $fasta.$i.out
+echo blat $db_2bit $parameters $fasta.$i $fasta.$i.out >> $cp/run.$i.log
+blat $db_2bit $parameters $fasta.$i $fasta.$i.out
 date >> $cp/run.$i.log
-EOF
+TEMPLATE
 
         my $of = 'run.' . $i . '.sh';
         my $out_fh = FileHandle->new($cp . '/scripts/' . $of, "w");
@@ -402,15 +475,15 @@ EOF
     mlog("All $chunk BLAT jobs Done");
 
 ## merge BLAT output files into one file
-    my $s = 'cat ';
+    my $tmp = 'cat ';
 
     for my $j (1 .. $chunk)
     {
-        $s .= $fasta . '.' . $j . '.out' . ' ';
+        $tmp .= $fasta . '.' . $j . '.out' . ' ';
     }
 
-    my $psl_fn   = $cp . '/temp/pairedreads.psl';
-    my $comm_cat = $s . '> ' . $psl_fn;
+    my $psl_fn   = $cp . '/temp/pairedreads_blat.psl';
+    my $comm_cat = $tmp . '> ' . $psl_fn;
     mlog("== RUN BLAT ==", $comm_cat);
     system($comm_cat);
 
@@ -1111,13 +1184,13 @@ sub check_total_memory
 sub usage
 {
     print <<"END_USAGE";
-Usage: $0 --forward=read1.fa --reverse=read2.fa --genome=/data/genome --genome_2bit=hg19.2bit --processes 2 
+Usage: $0 --forward=read1.fa --reverse=read2.fa --genome=/data/genome --genome_2bit_filename=hg19 --processes 2 
 
 --help                  Shows this help message
 --forward=name          Name of forward read file, fasta file only
 --reverse=name          Name of reverse read file, fasta file only
 --genome=dir            Directory of genome sequences for individual chromosome, ie, chr1.fa, chr2.fa, ..., chr22.fa, chrX.fa, chrY.fa, chrM.fa
---genome_2bit=name      Name of genome sequence file in 2bit format
+--genome_2bit_filename=name      Name of genome sequence file in 2bit format, do NOT put .2bit as suffix, e.g., if file is hg19.2bit, put hg19 here.
 --processes             Number of processes for BLAT (default is 1)
 --tilesize              Number of tileSize (default is 11)
 --stepsize              Number of stepSize (default is 5)
@@ -1281,5 +1354,177 @@ sub mcall
     &mlog(join(" ", "==", $annotation, "==", @arg));
     &{$caller}(@arg);
 }
+
+
+=head2   run_gfServer
+ Title   : run_gfServer
+ Usage   : 
+ Function: run multiple gfServer processes on a server
+ Returns : 
+ Args    : 
+=cut
+
+sub run_gfServer
+{
+
+    my ($db_2bit, $chunk, $tilesize, $stepsize, $rep, $server, $port, $cp) = @_;
+    my $repmatch = int(1024.0 * $tilesize / $stepsize);
+    my $parameters;
+
+    if (not $rep)
+    {
+        $parameters =
+          "-stepSize=$stepsize -tileSize=$tilesize -log";
+          
+
+    }
+    else
+    {
+        $parameters =
+          "-repMatch=$repmatch  -stepSize=$stepsize -tileSize=$tilesize -log";
+    }
+
+######  check the databases for BLAT
+
+	
+    if (!-d $cp . '/scripts')
+    {
+        mkdir($cp . '/scripts');
+    }
+
+ $port = $port || 5000;
+ $server = $server || 'localhost';
+
+	$db_2bit =~/(.+)\.2bit/;
+	my $db = $1 if defined $1;
+	
+    for (my $i = 1 ; $i <= $chunk ; $i++)
+    {
+            unless (-f $db.'.'.$i.'.2bit')
+    {
+        croak "Can't find BLAT database files\n";
+    }
+
+        my $command = <<TEMPLATE;
+#!/bin/sh' 
+date >> $cp/setup_gfServer.$i.log
+echo gfServer start $server $port $db.$i.2bit $parameters=gfServer.log.$i >> $cp/setup_gfServer.$i.log
+gfServer start $server $port $db.$i.2bit $parameters=gfServer.log.$i &
+date >> $cp/setup_gfServer.$i.log
+TEMPLATE
+
+        my $of = 'setup_gfServer.' . $i . '.sh';
+        my $out_fh = FileHandle->new($cp . '/scripts/' . $of, "w");
+        print $out_fh $command;
+        undef $out_fh;
+        $port++;
+    }
+
+    for my $p (1 .. $chunk)
+    {
+        my $pid = fork();
+        if ($pid == -1)
+        {
+            die;
+        }
+        elsif ($pid == 0)
+        {
+
+            my $gfServer_process = "bash $cp/scripts/setup_gfServer.$p.sh ";
+            exec $gfServer_process or die;
+        }
+    }
+    while (wait() != -1) { }
+    mlog("All $chunk gfServer are up and running.");
+    sleep(300);
+
+    return 1;
+}
+
+
+=head2   run_gfClient
+ Title   : run_gfClient
+ Usage   : 
+ Function: run multiple gfClient processes on a server
+ Returns : 
+ Args    : 
+=cut
+
+sub run_gfClient
+{
+
+    my ($input_fasta, $output_psl, $chunk, $minscore, $server, $port, $cp) = @_;
+
+    my $parameters;
+
+
+
+    
+        $parameters =
+          "-minScore=$minscore";
+    
+
+
+    if (!-d $cp . '/scripts')
+    {
+        croak "scripts folder does not exist. Exit\n";
+    }
+
+    $port = $port || 5000;
+    $server = $server || 'localhost';
+
+    for (my $i = 1 ; $i <= $chunk ; $i++)
+    {
+
+
+        my $command = <<TEMPLATE;
+#!/bin/sh' 
+date >> $cp/setup_gfClient.$i.log
+echo  gfClient  $server $port / $input_fasta.$i $output_psl.$i $parameters >> $cp/setup_gfClient.$i.log
+gfClient  $server $port / $input_fasta.$i $output_psl.$i $parameters
+date >> $cp/setup_gfClient.$i.log
+TEMPLATE
+
+        my $of = 'setup_gfClient.' . $i . '.sh';
+        my $out_fh = FileHandle->new($cp . '/scripts/' . $of, "w");
+        print $out_fh $command;
+        undef $out_fh;
+        $port++;
+    }
+
+    for my $p (1 .. $chunk)
+    {
+        my $pid = fork();
+        if ($pid == -1)
+        {
+            die;
+        }
+        elsif ($pid == 0)
+        {
+
+            my $gfClient_process = "bash $cp/scripts/setup_gfClient.$p.sh ";
+            exec $gfClient_process or die;
+        }
+    }
+    while (wait() != -1) { }
+    mlog("All $chunk gfClient are Done.");
+    system("killall gfServer");
+
+### merge BLAT output files into one file
+    my $tmp = 'cat ';
+
+    for my $j (1 .. $chunk)
+    {
+        $tmp .= $output_psl . '.' . $j  . ' ';
+    }
+
+    my $psl_fn   = $cp . '/temp/pairedreads_gfClient.psl';
+    my $comm_cat = $tmp . '> ' . $psl_fn;
+    mlog("== RUN BLAT ==", $comm_cat);
+    system($comm_cat);
+
+}
+
+
 
 1;
