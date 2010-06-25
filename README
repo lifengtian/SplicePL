@@ -1,19 +1,23 @@
 INTRODUCTION
 
-	SplicePL is developed to detect de novo splice junctions from paired-end
-	human RNA-seq data, especially for reads longer than 75 nt. With these long reads, 
-	novel exon-exon junctions can be directly identified by aligning reads to the 
-	reference genome using algorithms such as BLAT (Kent, 2002) or SSAHA2 (Ning et al., 2001), 
-	rather than splitting reads into segments as in TopHat (Trapnell et al., 2009) and SpliceMap (Au et al., 2010).
+	SplicePL is developed to detect de novo splice junctions from paired-end human RNA-seq data, especially for 
+        reads longer than 75 nt. With these long reads, novel exon-exon junctions can be directly identified by   
+        aligning reads to the reference genome using algorithms such as BLAT (Kent, 2002) or SSAHA2 (Ning et al., 
+        2001), rather than splitting reads into segments as in TopHat (Trapnell et al., 2009) and SpliceMap (Au et al., 
+        2010).
 
-	SplicePL detects splice junctions by a three-stage process. Initially, each read is aligned to
-	the reference genome using BLAT, followed by identifying  spliced
-	reads across exon-exon junction.  Finally, the putative junctions are
-	identified and filtered based on splice site donor/acceptor site,
-	intron and flanking sequence length.
+	SplicePL detects splice junctions by a three-stage process. Initially, each read is aligned to the reference 
+        genome using BLAT, followed by identifying  spliced reads across exon-exon junction.  Finally, the putative 
+        junctions are identified and filtered based on splice site donor/acceptor site, intron and flanking sequence 
+        length.
 
-	In summary, SplicePL is mainly a simple BLAT parser and splice site filter. It is written in Perl, packaged as
-	a perl module to facilitate testing and installation. 
+	In summary, SplicePL is a simple BLAT parser and splice site filter. It is written in Perl, packaged as
+	a perl module to facilitate testing and installation. The code can be improved a lot by using BioPerl modules,
+        however, for the sake of simplicity and ease of use, we choose to implement it the way it is.
+
+        At this moment of writing (Jun 2010), SplicePL has the highest sensitivity for long reads (at least 100 nt)
+        compared with TopHat and SpliceMap. However, SpliceMap has better specificity than SplicePL. If, like us, you
+        have long paired-end reads, you should try all three methods on your data.
 
 
 PREREQUISITE
@@ -22,26 +26,32 @@ PREREQUISITE
 	   You also need faToTwoBit, which is part of BLAT.
 	   For BLAT installation, please go to http://genome.ucsc.edu/FAQ/FAQblat.html#blat3
 	   
-	2. fasta files for individual human chromosomes were downloaded, and in the same folder, a 2BIT format file is prepared 
-	from chr1.fa, chr2.fa, ..., chr22.fa, chrX.fa, chrY.fa,and chrM.fa. You can download the hg19 assembly ( or The Feb. 2009 
-	human reference sequence (GRCh37) ) from http://hgdownload.cse.ucsc.edu/goldenPath/hg19/bigZips/
+	2. fasta files for individual human chromosomes were downloaded, and in the same folder, a 2BIT format file is 
+           prepared from chr1.fa, chr2.fa, ..., chr22.fa, chrX.fa, chrY.fa,and chrM.fa. You can download the hg19 
+           assembly ( or The Feb. 2009 human reference sequence (GRCh37) ) from 
+           http://hgdownload.cse.ucsc.edu/goldenPath/hg19/bigZips/
 	
- 
 	3. you know exact number of RAM and processors in your LINUX server. 
 
 
 HOW TO USE IT
-	SplicePL.pm is designed to run on a LINUX server with large memory and multiple CPUs. SplicePL is  tested on Ubuntu 10.04 and Red Hat 4.1.2-46.
+	SplicePL.pm is designed to run on a LINUX server with large memory and multiple CPUs. SplicePL is  tested on 
+        Ubuntu 10.04 and Red Hat 4.1.2-46.
 
-	It requires 3GB of RAM to load the hg19 assembly to the memory. To run multiple BLAT processes (n=N), you need to have at least 4.0*N GB of RAM. 
+	It requires 3GB of RAM to load the hg19 assembly to the memory. To run multiple BLAT processes (n=N), you need 
+        to have at least 4.0*N GB of RAM. 
  
 
 	You run SplicePL.pm within a LINUX terminal. 
-	1. (Recommended) Use the BLAT program which uses about 4.0GB of RAM for human genome hg19, including index (1.3GB) plus sequences (3GB):
-	perl SplicePL/SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome=/data/share/db/human/hg19.fa.masked --genome_2bit_filename=hg19.fa.masked.2bit --flanksize=10 --processes=6
+	1. (Recommended) Use the BLAT program which uses about 4.0GB of RAM for human genome hg19, including index 
+           (1.3GB) plus sequences (3GB):
+       perl SplicePL/SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome=/data/share/db/human/hg19.fa.masked 
+       --genome_2bit_filename=hg19.fa.masked.2bit --flanksize=10 --processes=6
 	
-	2. (optional, not recommended) Use the gfServer/gfClient programs which use 1.2GB of RAM for human genome hg19. In the alignment stage, it will load needed sequences into RAM:
-	perl SplicePL/SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome=/data/share/db/human/hg19.fa.masked --genome_2bit_filename=hg19.fa.masked.2bit --flanksize=10 --processes=14 --gfServer
+	2. (optional, not recommended) Use the gfServer/gfClient programs which use 1.2GB of RAM for human genome hg19. 
+           In the alignment stage, it will load needed sequences into RAM:
+	perl SplicePL/SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome=/data/share/db/human/hg19.fa.masked 
+        --genome_2bit_filename=hg19.fa.masked.2bit --flanksize=10 --processes=14 --gfServer
 	
 OUTPUT
 	The alignment output is stored in the 'temp' directory; the junction files are in the 'output' directory. 
