@@ -1,4 +1,3 @@
-
 INTRODUCTION
 
 	SplicePL is developed to detect de novo splice junctions from paired-end
@@ -49,14 +48,19 @@ OUTPUT
 	
 	The first column in the junction file is the splice junction. It has three parts:
 	1. chromosome name
-	2. last nucleotide of the donnor exon
+	2. last nucleotide of the donor exon
 	3. first nucleotide of the acceptor exon
 	For example, it may look like    chr10:102286311-102286732
 	
 
 ACKNOWLEDGEMENT
-	Using BLAT, instead of short reads aligner such as Bowtie, to align the long reads to the genome was initially suggested by Greg Grant. 
-	
+	Using BLAT, instead of short reads aligner such as Bowtie, to align the long reads to the genome was initially  
+        suggested by Greg Grant. 
+
+REFERENCE
+       Kent, W. J. (2002) Blat-the blast-like alignment tool, Genome Res 12, 656-664.
+       Ning, Z., Cox, a. J., and Mullikin, J. C. (2001) SSAHA: a fast search method for large DNA databases.,    
+          Genome research 11, 1725-9.	
 CONTACT
 	If you have any comments and questions about SplicePL, please contact lifeng2@mail.med.upenn.edu
 
