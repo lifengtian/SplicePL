@@ -1,7 +1,7 @@
 INTRODUCTION
 
 	SplicePL is developed to detect de novo splice junctions from paired-end
-	human RNA-seq data, especially from reads longer than 75 nt. With these long reads, 
+	human RNA-seq data, especially for reads longer than 75 nt. With these long reads, 
 	novel exon-exon junctions can be directly identified by aligning reads to the 
 	reference genome using algorithms such as BLAT (Kent, 2002) or SSAHA2 (Ning et al., 2001), 
 	rather than splitting reads into segments as in TopHat (Trapnell et al., 2009) and SpliceMap (Au et al., 2010).
