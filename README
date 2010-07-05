@@ -18,8 +18,9 @@ INTRODUCTION
         At the moment of writing (Jun 2010), SplicePL has the highest sensitivity for long reads (at least 100 nt)
         compared with TopHat and SpliceMap. However, SpliceMap has better specificity than SplicePL. 
 
-        We share SplicePL with the RNA-seq community here. If you have long paired-end reads, our advice is to 
-        run all three methods and integrate the results.
+        In our own RNA-seq analysis, we used TopHat, SpliceMap, SplicePL, and GSNAP. We find robust results
+        can be obtained from highly expressed transcripts. Lowly expressed junctions tend to disagree more for
+        different methods. 
 
 
 PREREQUISITE
@@ -77,7 +78,12 @@ CONTACT
 	If you have any comments and questions about SplicePL, please contact lifeng2@mail.med.upenn.edu
 
 
-TO DO:
+TO DO
      1. convert junction format to bed format
      2. filter junctions by read coverage
-     3. convert BLAT psl to BAM format
+     3. convert BLAT psl to BAM format such that RPKM can be calculated using Cufflinks
+
+
+LIMITATION!!!!
+     So far, SplicePL does NOT use non-uniquely mapped reads in the splice junction analysis. Since we really don't know
+     how to resolve some ambiguous reads, we choose NOT to use them. 
