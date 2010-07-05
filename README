@@ -1,3 +1,10 @@
+LIMITATION!!!!
+     So far, SplicePL does NOT use non-uniquely mapped reads in the splice junction analysis. Since we really don't know
+     how to resolve the ambiguous reads, we choose NOT to use them. 
+
+     SplicePL only works with human genome right now. The chromosome numbers are hard-coded from chr1 to chrM. 
+
+
 INTRODUCTION
 
 	SplicePL is developed to detect de novo splice junctions from paired-end human RNA-seq data, especially for 
@@ -84,6 +91,3 @@ TO DO
      3. convert BLAT psl to BAM format such that RPKM can be calculated using Cufflinks
 
 
-LIMITATION!!!!
-     So far, SplicePL does NOT use non-uniquely mapped reads in the splice junction analysis. Since we really don't know
-     how to resolve some ambiguous reads, we choose NOT to use them. 
