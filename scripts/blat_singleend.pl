@@ -14,16 +14,27 @@
 	blat_singleend.pl Run BLAT and Report uniquely-mpped reads above minScore
 	
 =head1 SYNOPSIS
-	perl blat_singleend.pl  --fasta reads.fa --genome_dir=/data/share/db/human/hg19 --genome_2bit_filename=hg19.2bit --minScore=30 --processes=6
+	perl blat_singleend.pl  --fasta reads.fa --genome_dir=/data/share/db/human/hg19 --genome_2bit_filename=hg19.2bit --minScore=60 --processes=6
 	
 =head1 DESCRIPTION
+       This script simply run BLAT on N processors by splitting the input fasta files to N pieces; then find
+       uniquely mapped reads from BLAT output.
+
+       Please select stringent threshold for minScore. The rule of thumb is, e.g., if you want at least 90 bases
+       matching the reference sequence, make --minScore=90.
+
+       In one of my benchmark study, 5 million reads out of 18 million were mapped to multiple locations of the human
+       genome with the same matching score, basically impossible for me to map them unambiguously. What about other 
+       genomes? Well, I don't know. It's your turn to share with me your results. 
 
 
 =head1 PREREQUISITES  
 	Before running  SplicePL, please make sure:
 	1. Either BLAT or gfServer/gfClient binaries is installed. The most recent version (Jun 25, 2010) is 34x7 .
-	2. fasta files for individual human chromosomes were downloaded, and in the same folder, a 2BIT format file is prepared from chr1.fa, chr2.fa, ..., chr22.fa, chrX.fa, chrY.fa,and chrM.fa. 
+	2. A 2BIT format file is prepared from fasta files. 
 
+=head1 TO DO
+       nothing on the list yet.
 
 =head1 FEEDBACK
 
@@ -47,12 +58,19 @@ use POSIX qw(strftime);
 use Getopt::Long;
 
 ### run() was called only when user execute "perl SplicePL.pm "
+### however, run() was called when user "use SplicePL.pm"
+###     such that when one day SplicePL.pm becomes a real module
+###     it's easy just to use it
+### Also, this way, tests can be easily tested by
+###     perl Makefile.PL
+###     make test
+
 &run() unless caller();
 
 sub run
 {
     my $USAGE                = '';
-    my $VERSION              = '1.0';
+    my $VERSION              = '0.1';
     my $GENOME_DIR           = undef;
     my $GENOME_2BIT_FILENAME = undef;
     my $PROCESSES            = undef;
