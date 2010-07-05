@@ -1,0 +1,22 @@
+
+
+INSTALLATION
+  First download the gmap_gsnap package from:
+  wget http://research-pub.gene.com/gmap/src/gmap-gsnap-2010-03-09.tar.gz
+
+  Then, compile it
+      ./configure --prefix=/data/share/LifengTian/
+       make
+       make install
+
+PREPARE GMAP GNOME DATABASE INDEX
+  gmap_setup -d mm9 data/share/LifengTian/mm9.fa
+
+  make -f Makefile.mm9 coords
+
+  make -f Makefile.mm9 gmapdb
+
+  make -f Makefile.mm9 install
+
+RUN GSNAP
+  gsnap -O -D /data/share/LifengTian/share -d hg19.masked -N 1 -p 250 -P 750000 -t 12 fa > gsnap.output

@@ -1,0 +1,614 @@
+
+BLAT -- How it works? 
+Lifeng Tian
+
+(not finished yet)
+
+The inner workings of BLAT were learned by reading source code and tracing the program in GDB.
+
+0. BLAT paper 
+
+James Kent developed BLAT to solve the EST/gDNA alignment problem requiring him to align millions of EST to
+human/mouse genome in two weeks.  Before BLAT, Kent published a paper on Intronerator which described a cDNA/genome alignment method called FuzzyFind. In BLAT, he changed DNA hit searching strategies and added
+protein/genome alignment capability.
+
+
+BLAT index the sequence database using k-mer (k from 6 to 18 for DNA), then finds short exact match tiles between query and database, also known as the hits, then extends the hits to high-scoring pairs. This is similar with BLAST. However, BLAT is designed to align many cDNAs to genome. cDNA commonly has very high similarity to the genome. However, cDNA/genome alignment may contain large gap (ie,the intron). Also unlike BLAST, cDNA/genome alignment generally report an ordered list of 'exons' with accurate splice sites boundaries. BLAT has special code to find small internal exons and slide introns wherever possible to find the correct exon-intron boundaries, or the splice junctions. 
+
+
+BLAT was designed to align highly similar sequences, for example, ESTs, to the reference genome. 
+(reference genome means overall similarity will be high, 90%. Also can be used in homology search.
+BLAT was not designed originally to align 50bp to 150bp reads to genome, instead it is designed to align 300bp to 10,000bp long sequences to genome. Thus, the parameters may have to be optimized for short reads mapping. 
+
+The encouraging finding from our naive BLAT splicing junctions filtering test shows that BLAT finds quite a lot of junctions, and may have better overall performance than TopHat. BLAT runs fast if using large stepSize (11). It shows that BLAT is not fitting for really short reads. 
+
+Kent said in the BLAT paper (2002) that the speed bottleneck for BLAT is at sorting hit list and extending the alignment. gprof results with agree.
+
+
+
+1. Compiling BLAT
+
+BLAT is downloaded from UCSC CVS
+[add cvs info]
+
+After download it, set the MACHTYPE environment variable as:
+export MACHTYPE=x86_64 (or i386 i686 depends on the computer)
+export MYSQLINC=/data/share/LifengTian/src/mysql-5.1.46-linux-x86_64-glibc23/include
+export MYSQLLIBS="/data/share/LifengTian/src/mysql-5.1.46-linux-x86_64-glibc23/lib/libmysqlclient.a -lz"
+
+
+cd kent/src/blat
+make all
+
+
+
+2. GDB tracing the code
+The most efficient way to explore the code is to run it in the GDB debugger first. Set breakpoints and step into/over and peek at the memories.
+
+Here is a list of functions to set breakpoints in gdb:
+b gfLongDnaInMem
+b gfFindClumpsWithQmask
+b gfClumpsToBundles
+
+Of course, add printf to dump the variables and structures such as genoFind, gfHit, gfClump, ssBundle etc is very helpful. 
+
+
+
+
+3. Source code review:
+BLAT was written in ANSI C. Tried to optimize the code by gcc -O2 or -O3. Comping with -O2,-O3 failed, it was successfully compiled with -O -g.
+Four major .c files:
+1. blat.c in blat folder
+2. genoFind.c in jkOwnLib folder
+3. supStitch.c in jkOwnLib folder
+4. fuzzyFind.c in ?
+
+
+
+Several very important data structures used in BLAT:
+  dnaSeq
+  genoFind
+  gfSeqSource
+  gfHit
+  gfClump
+  ssBundle
+  ali
+
+
+struct genoFind
+/* An index of all K-mers in the genome.*/
+    {
+    int maxPat;                          /* Max # of times pattern can occur
+                                          * before it is ignored. */
+    int minMatch;                        /* Minimum number of tile hits needed
+                                          * to trigger a clump hit. */
+    int maxGap;                          /* Max gap between tiles in a clump. */
+    int tileSize;			 /* Size of each N-mer. */
+    int stepSize;			 /* Spacing between N-mers. */
+    int tileSpaceSize;                   /* Number of N-mer values. */
+    int tileMask;			 /* 1-s for each N-mer. */
+    int sourceCount;			 /* Count of source files. */
+    struct gfSeqSource *sources;         /* List of sequence sources. */
+    bool isPep;			 	 /* Is a peptide. */
+    bool allowOneMismatch;		 /* Allow a single mismatch? */
+    int segSize;			 /* Index is segmented if non-zero. */
+    bits32 totalSeqSize;		 /* Total size of all sequences. */
+    bits32 *listSizes;                   /* Size of list for each N-mer */
+    void *allocated;                     /* Storage space for all lists. */
+    bits32 **lists;                      /* A list for each N-mer. Used if
+                                          * isSegmented is false. */
+    bits16 **endLists;                   /* A more complex list for each N-mer.
+                                          * Used if isSegmented is true.
+					  * Values come in groups of threes.
+					  * The first is the packed last few
+					  * letters of the tile.  The next two
+					  * are the offset in the genome.  This
+					  * would be a struct but that would take
+					  * 8 bytes instead of 6, or nearly an
+					  * extra gigabyte of RAM. */
+    };
+
+
+struct gfSeqSource
+/* Where a block of sequence comes from. */
+    {
+    struct gfSeqSource *next;
+    char *fileName;	/* Name of file. */
+    bioSeq *seq;	/* Sequences.  Usually either this or fileName is NULL. */
+    bits32 start,end;	/* Position within merged sequence. */
+    Bits *maskedBits;	/* If non-null contains repeat-masking info. */
+    };
+
+struct seqList // ameme/ameme.h we only need char *comment and dnaSeq. 
+slCount can count any List structure with
+struct List 
+/* A general list */
+   {
+   struct List *next;
+   char *id;
+   dnaSeq *seq;
+   }
+
+
+
+struct gfHit
+/* A genoFind hit. */
+   {
+   struct gfHit *next;
+   bits32 qStart;		/* Where it hits in query. */
+   bits32 tStart;		/* Where it hits in target. */
+   bits32 diagonal;		/* tStart + qSize - qStart. */
+   };
+
+/* gfHits are free'd with simple freeMem or slFreeList. */
+
+struct gfClump
+/* A clump of hits. */
+/* Note: for clumps from regular (blat) queries, tStart and tEnd include 
+ * target->start, but for clumps from gfPcrClumps(), tStart and tEnd have 
+ * already had target->start subtracted.  So tStart and tEnd in PCR clumps 
+ * are relative to that target sequence (not the collection of all target 
+ * sequences). */
+    {
+    struct gfClump *next;	/* Next clump. */
+    bits32 qStart, qEnd;	/* Position in query. */
+    struct gfSeqSource *target;	/* Target source sequence. */
+    bits32 tStart, tEnd;	/* Position in target. */
+    int hitCount;		/* Number of hits. */
+    struct gfHit *hitList;	/* List of hits. Not allocated here. */
+    int queryCoverage;		/* Number of bases covered in query (thx AG!) */
+    };
+
+struct gfRange
+/* A range of bases found by genoFind.  Recursive
+ * data structure.  Lowest level roughly corresponds
+ * to an exon. */
+    {
+    struct gfRange *next;  /* Next in singly linked list. */
+    int qStart;	/* Start in query */
+    int qEnd;	/* End in query */
+    char *tName;	  /* Target name.  Allocated here. */
+    struct dnaSeq *tSeq;  /* Target Seq. May be NULL in a .nib.  Not allocated here. */
+    int tStart;	/* Start in target */
+    int tEnd;	/* End in target */
+    struct gfRange *components;	/* Components of range. */
+    int hitCount;	/* Number of hits. */
+    int frame;		/* Reading frame (just for translated alignments) */
+    struct trans3 *t3;	/* Translated frame or NULL. */
+    int tTotalSize;	/* Size of entire target sequence, not just loaded parts.  Not set until late in the game. */
+    char tStrand;	/* Just for PCR. */
+    };
+
+/* dnaSeq.h */
+struct dnaSeq
+/* A dna sequence in one-character per base format. */
+    {
+    struct dnaSeq *next;  /* Next in list. */
+    char *name;           /* Name of sequence. */
+    DNA *dna;             /* Sequence base by base. */
+    int size;             /* Size of sequence. */
+    Bits* mask;           /* Repeat mask (optional) */
+    };
+
+typedef char DNA;
+
+struct ffAli
+/* Node of a doubly linked list that will contain one
+ * alignment. Contains information on a matching
+ * set of DNA between needle and haystack. */
+    {
+    struct ffAli *left;   /* Neighboring intervals. */
+    struct ffAli *right;
+    char *nStart, *nEnd;          /* Needle start and end. (1/2 open interval) */
+    char *hStart, *hEnd;          /* Haystack start and end. ? why we need the char **/
+    int startGood, endGood; /* Number that match perfectly on ends. */
+    };
+
+/* maximum intron size for fuzzy find functions */
+
+#define ffIntronMaxDefault 750000	/* Default maximum intron size */
+
+extern int ffIntronMax;
+
+struct ssFfItem
+/* A list of fuzzy finder alignments. */
+    {
+    struct ssFfItem *next;      /* Next in list. */
+    struct ffAli *ff;		/* Alignment (owned by ssFfItem) */
+    };
+
+void ssFfItemFree(struct ssFfItem **pEl);
+/* Free a single ssFfItem. */
+
+void ssFfItemFreeList(struct ssFfItem **pList);
+/* Free a list of ssFfItems. */
+
+struct ssBundle
+/* A bunch of alignments all with the same query sequence.  This
+ * is the input to the stitcher.*/
+    {
+    struct ssBundle *next;	/* Next in list. */
+    struct ssFfItem *ffList;    /* Item list - memory owned by bundle. */
+    bioSeq *qSeq;        /* Query sequence (not owned by bundle.) */
+    bioSeq *genoSeq;     /* Genomic sequence (not owned by bundle.) */
+    int genoIx;                 /* Index of bac in associated PatSpace. */
+    int genoContigIx;           /* Index of contig inside of seq. */
+    void *data;			/* User defined data pointer. */
+    boolean isProt;		/* True if it's a protein based bundle. */
+    struct trans3 *t3List;	/* Sometimes set to three translated frames. */
+    boolean avoidFuzzyFindKludge;	/* Temporary flag to avoid call to fuzzyFind. */
+    };
+
+
+
+BLAT has a set of memory management utilities, sorting functions, file I/O routines. 
+
+
+3.1 blat.c main() reads the command line options and set up the parameters for BLAT. 
+       when everything is ready, it calls blat().
+       blat() trims and masks database sequences. We don't need™ it. 
+       blat -> ClientFileArray database
+       	    -> gfMakeOoc
+       	    -> ClientFileArray query
+	    -> gfClientSeqList  return list of dnaSeq for database 
+       	    -> gfClientUnmask   and  gfIndexSeq
+       	       -> gfSmallIndexSeq
+            ->searchOneIndex     search all seqs against one index
+		->searchOneMaskTrim->      search one seq against one index
+		    -> maskQuerySeq    query sequence is masked here
+		    -> trimSeq	       trim query seq
+		    -> searchOne       
+			->gfLongDnaInMem().
+
+	DONE
+
+
+       blat: lineFileOpen(), struct lineFile
+	faMixedSpeedReadNext
+		Read in DNA or Pep record in mixed cases. don't need this.  file fa.c 
+		lineFileNext check fasta format, start with >, allows space between > and first word
+			     firstWordInLine(skipLeadingSpaces), errAbort is neat
+
+
+
+
+        searchOne 
+		  don't need to trim and mask sequences
+		  searchOneStrand, then reverseComplemnt it, search again, reverse back
+
+	searchOneStrand -> gfLongDnaInMem well, searchOneStrand is a wrapper around this function. 
+
+
+A session of GDB on gfIndexSeq
+
+	 In gdb, type the following command:
+	 cd myblat/case1
+	 file ../bin/blat
+	 set b gfIndexSeq
+	 run test4db.2bit test4.fa test4.psl
+	 c
+
+	 (gdb) run test4db.2bit test4.fa test4.psl
+	 Starting program: /data/share/LifengTian/myblat/bin/blat test4db.2bit test4.fa test4.psl
+	 Loaded 33 letters in 1 sequences
+
+	 b gfIndexSeq
+	 r
+
+	 Breakpoint 1, gfIndexSeq (seqList=0x10c12b30, minMatch=2,
+	 maxGap=2, tileSize=11, maxPat=1024, oocFile=0x0, isPep=0,
+	 allowOneMis\ match=0, maskUpper=0, stepSize=11) at
+	 genoFind.c:927
+
+	 -> gfSmallIndexSeq
+
+	 dbFile and queryFile are processed by gfClientFileArray to return a list of file name
+	   a dbFiles, char**. nib? 2bit and fa is supported, also stdout, gz etc. 
+
+	   from such a list of file name, gfClientSeqList will return a list of bioSeq. Let's see how 2bit files are
+	   processed by twoBitIsSpec(filename) and twoBitLoadAll(filename). twoBitLoadAll handles spec like
+	     file/path/input.2bit[:seqSpec1][,seqSpec2,...] where seqSpec is either seqName, or seqName:start-end.
+	   twoBitLoadAll will return list of dnaSeq for all sequeces matching spec. 
+	   It calls twoBitReadSeqFrag (twoBit.c) (struct twoBitFile *, char *, int start, int end)
+	   2bit--> dnaSeq
+	     
+
+	  database sequences and letters are counted. 
+
+	     
+Backtrace for gfLongDnaInMem
+#0  gfLongDnaInMem (query=0x7fffcf758f70, gf=0xb5dfa40, isRc=0, minScore=30, qMaskBits=0x0, out=0xb5df9e0, fastMap=0, band=0) a\
+t gfBlatLib.c:1483
+#1  0x0000000000403361 in searchOneStrand (seq=0x7fffcf758f70, gf=0xb5dfa40, psl=<value optimized out>, isRc=0, maskHash=<value\
+ optimized out>, qMaskBits=0x0) at blat.c:200
+#2  0x00000000004033ef in searchOne (seq=0x7fffcf758f70, gf=0xb5dfa40, f=0xb5df3c0, isProt=0, maskHash=0x0, qMaskBits=0x0) at b\
+lat.c:241
+#3  0x000000000040352c in searchOneMaskTrim (seq=0x65aae0, isProt=0, gf=0xb5dfa40, outFile=0xb5df3c0, maskHash=0x0, retTotalSiz\
+e=0x7fffcf759018, retCount=0x7fffcf759024) at blat.c:312
+#4  0x00000000004037ce in searchOneIndex (fileCount=1, files=<value optimized out>, gf=0xb5dfa40, outName=<value optimized out>\
+, isProt=0, maskHash=0x0, outFile=0xb5df3c0, showStatus=1) at blat.c:384
+#5  0x0000000000403b18 in blat (dbFile=<value optimized out>, queryFile=<value optimized out>, outName=0x7fffcf75973f "test4.ps\
+l") at blat.c:610
+#6  0x000000000040401f in main (argc=4, argv=0x7fffcf7591f8) at blat.c:750
+
+
+
+
+3.2 genoFind.c It provides fast finding of sequence match by hashing. 
+	start from gfLongDnaInMem, it does 
+	   1. chop up long query (5000bp) into subqueries based on the size of the query. We don't need it.
+	   2. Align each query to database
+	   3. stitch together the alignment
+
+	Align each query to database
+	   gfFindClumpsWithQmask, then gfClumpsToBundles, two of the most important functions.
+
+
+	   gfFindClumpsWithQmask
+	     -> gfFindHitsWithQmask
+	     	-> gfFastFindDnaHits	very fast
+	     -> clumpHits
+
+
+	   gfFastFindDnaHits uses a really fast algorithm to calculate k-mer tile match from query to database.
+	     string of k-mer is converted to an integer number which is used as an index to an array gf->listSize[].
+
+	   gfFindHitsWithQmask return a hitList (gfHit). 
+	   BLAT finds hits first, then clump hits together, finally align Bundles. 
+	
+		A hitList (gfHit) contains all matches of all possible k-mer (qSize-k+1) in query to the database k-mer 
+		index. Each hit records qStart, tStart and diagonal(tStart+qSize-qStart). 
+		A query usually incurs (qSize-k+1)*100 hits, i.e., on average
+		we see 100-200 hits per k-mer (exceptions exist for certain k-mer, one may exclude them by ooc mechnism).
+		A hit list for each query contains all the hits and is partly sorted by tStart. 
+
+		? can I translate from tStart location to chromosome location?
+	
+		A clump contains a list of hits, the position in query and target, a reference to gfSeqSource, a queryCoverage.
+		It is created from all the hits of the query sequence by clumpHits. 
+		A bucket of size 2^16 is used to . boundary=bucketSize-gfNearEnough. 
+		First the hit list is sorted into bucket. The hit list has qSize-k+1 (maximum) gfHit (is a list). 
+		      for (hit=hitList; hit!=NULL; hit=nextHit)
+		      	  {		
+			  		nextHit=hit->next;
+					pb=buckets + (hit->tStart >> bucketShift);
+					slAddHead(pb,hit);
+			}
+			Here, pb, buckets are gfHit **. 
+		pb is gfHitSortDiagnal		
+
+		Now comes the real thing. Now each hit is sorted by diagnal. maxGap=2 by default, which is the maximum gap between
+		tiles (or k-mer) in a clump. That is if indel happens between tiles, it can't be larger than 2 nt. 
+
+		minMatch, usually set from 2 to 4, determines the minimum size of the clump, that each clump should have at least this
+		number of hits. 
+
+
+		clumpNear: After clumpList is generated, it is checked in this function to make sure that hits are ALSO near each other.?
+		If necessary divide clumps. This confused me. Oh, hits can be diagonally close but tStartly far. Yeah!
+		BLAT uses a gfNearEnough=300 (not user changeable) as a cutoff.
+
+				gfNearEnough=300
+				findClumpBounds: such as each clump has tStart/tEnd qStart/qEnd. 
+
+		  targetClump assigns clump to target; if clump has multiple targets split it into multiple clumps. ?not sure what target
+		  means. Each fasta records in a bit file?
+
+		gfClumpComputeQueryCoverage?
+
+		several utilities: slAddHead,slReverse, slSort, AllocVar
+
+	End of gfFindClumpsWithQmask
+
+	gfClumpsToBundles: Now we have nice clumps for each query. It's time to convert it to actual alignments (ssBundles). 
+	It has the following major players:
+	1. seqClumpToRangeList
+	2. gfRangesBundle
+	3. gfiExpandRange
+	4. alignComponents
+	5. ssStitch
+	
+
+	 gfRange is a structure.
+
+	 1. rangeList is generated from Clump by the function seqClumpToRangeList in gfBlatLib.c
+	   target position in the clump is transformed to local locations wrt target->start. 
+	   range has: qStart, qEnd, tName, tStart, tEnd, tSeq, frame(?)
+	   Range is nothing but local Clump.
+
+	 2. Given a gfRange of exonList, Bundle a bunch of 'exons' into plausible 'genes'. It's not necessary to be precise here.
+	    The main thing is to group together exons that are close to each other in the same arget sequence.
+	    A geneList (gfRange) is returned. 
+
+	    ?2000 is passed as maxIntron, should be 750,000? or not this stage.
+
+	 3. Expand the geneList to cover an additional 500 bases on either side. It is a general utility to work on
+	    any gfRange. gfInternal.c
+
+	 4. alignment time comes to alignComponents. First, an extra 250 nt is included in both q and t. 
+	 that is total of 500 bp. For first and last range item, an extra 250 nt is added.
+
+fuzzyFind.c Then, ffFind align the qSeq and tSeq with
+	    ffStringency. ffFind is defined in fuzzyFind.c. It returns
+	    an ffAli structure.  The author says it returns an
+	    alignment of needle in haystack. He named the qSeq input
+	    as needleStart and needleEnd, tSeq as hayStart and
+	    hayEnd. set up the ffRecover and ffAbort, it calles
+	    findBestAli of needle and hay.
+
+(gdb) p *(struct ffAli *) 0xcccb580
+$77 = {left = 0x0, right = 0xcccb5b8, nStart = 0xccb6c40 "aggcttccgttttctatacgagaggtgccggtg", nEnd = 0xccb6c50 "tacgagaggtgccgg\
+tg", hStart = 0xcca6b90 "aggcttccgttttctaaacgagaggtgccggtg", hEnd = 0xcca6ba0 "aacgagaggtgccggtg", startGood = 0, endGood = 0}
+
+? how hEnd is calculated? 
+
+
+
+	    
+	    findBestAli defines iniExpGapPen, addExpGapPen, and midTileMinSize for exact, cDNA, tight, and loose. 
+	    calls findWovenTiles and bunch of other programs to improve? the bestAli:
+
+	    findWovenTile  tileStrinProbMult for exact, cDNA, tight and loose. 
+	    		   makeFreqTable(hs,haySize,rwFreq)
+			   recursiveWeave   Find a set of tiles recursively with lower stringency.
+
+			      
+				rwFindTilesBetween  n&h well, I am quite lost here. Time to take a break. Jim in blat paper says
+
+
+		makeFreqTable 
+		  -> dnaBaseHistogram 
+		     -> dnaMark0  
+
+				
+		*recursiveWeave
+		  -> exactAli
+		     -> exactFind    Look for exact match of needle in haystack
+		        -> memcmp    Slide needle along hay for exact match using standard function memcmp
+
+
+		?findImprobableOligo ?
+
+
+
+
+				in fuzzyFind.c, Jim explained how the algorithm works. He says that first
+				exact match of evenly spaced subseq
+				(tile) of the needle long enough for
+				the match be more than pure
+				chance. The tile is then extended as
+				far exactly. Each file may match the
+				haystack in multiple places.
+
+				But the next, the weave routines try to find a good way to link the tiles together. 
+				Once a preliminary alignment exists, it starts to search for matches between tiles. 
+				Finally the tiles are furthur extended inexactly until they abutt each other or fails.
+
+				Well this is a summary of fuzzyFind. I am not impressed at all and amazed it will find anything :)
+
+
+	 Now, ffAli from findWovenTile is processed by:
+
+	    ffMergeNeedleAlis	    
+	    expandAlis		    Expand alignment to cover in-between tiles as well
+	    			    expandLeft expandRight
+	    ffMergeNeedleAlis
+	    expandAlis
+	    trimAlis
+	    ffMergeNeedleAlis
+	    ffMergeHayOverlaps
+	    reconsiderAlignedGaps
+	    ffRemoveEmptyAlis
+	    ffMergeNeedleAlis
+	    ffSlideIntrons		calls slideIntron calls ffScoreIntron where I see the code GTAG
+	    ffRemoveEmptyAlis
+
+	    well, ffSlideIntrons is special code to score better splice sites. Each G,T,A,G match add 1 score to total score.
+
+
+supStitch.c
+	  5. ssStitch
+	    ssBundle structure has bundle->ffList->ff as a ffAli structure. 
+
+	    ffCat create ffAlis from all in bundle and move to one big list. 
+	    ffAliSort
+	    ffMergeClose
+
+
+
+
+	    5.1 ssFindBest
+	      5.1.1 ssFindBestSmall or ssFindBestBig depends on ffAliCount(ffList). 
+	      	    uses dynamic programming on the ssGraph to find best chains.
+ssFindBestSmall
+ssGraphMake
+  ssGraphFindBest
+  ffMakeRightLinks
+forceMonotonic
+
+
+ffMergeNeedleAlis
+ffRemoveEmptyAlis
+ffMergeHayOverlaps
+ffRemoveEmptyAlis
+forceMonotonic
+
+
+
+	    5.2 smallMiddleExons
+	    5.3 cutAtBigIntrons
+	    5.4 ffSlideIntrons
+
+ffSlideOrientedIntrons   slide spaces between aligned blocks to match consensus on given strand
+
+	    6. refineSmallExonsInBundle
+
+    7. saveAlignments. We are DONE! 
+scoreAli
+	dnaScoreMatch
+	ffCalcGapPenalty
+gfOutput->out
+
+
+
+
+	    ffCountGoodEnds calls countGoodStart and countGoodEnd to fill in the goodEnd and badEnd scores for ali.
+
+	    saveAliToPermanentMem 
+	    
+
+	    
+
+
+
+    	here, genoFind is alreaddy created. I did not check that part yet. 
+	? segmented index is what?
+      
+	maxSize=5000, overlapSize=250, aha, we are too short for that!
+	we don't need to chop up any query since it is too short.
+	get rid of these code. 
+
+	dumpBunList(bigBunList) is ifdef DEBUG, now
+	I make it visible. uncomment the dumpBunList in gfBlatLib.c and
+		
+also commented out dumpClump, dumpClumpList in genoFind.c
+now it printed out the clump list.
+
+set breakpoints at several functions help
+b gfFindHitsWithQmask
+
+gfFastFindDnaHits: find hits associated with one sequence.
+
+00:12:46/data/share/LifengTian/myblat/case1> ../bin/blat /data/share/LifengTian/projects/RNAseq/pipeline/hg19.fa.2bit -tileSize=11 -stepSize=11 -minScore=0 seq1.fa seq1.psl
+Loaded 3095693983 letters in 25 sequences
+-------------------------------seq1----------------------------
+Lifeng: clump qStart-qEnd	tName: tStart-tEnd
+8-30	chr1:113465979-113466001
+
+Lifeng: gfBlatLib.c: Dump BunList
+item: 30,
+total bundles 1, alignments 1, blocks 1, bases 30
+
+Lifeng: gfBlatLib.c: Dump BunList
+total bundles 0, alignments 0, blocks 0, bases 0
+Searched 30 bases in 1 sequences
+
+
+every gfHit has bits32 qStart, tStart, diagonal. tSeq is a big chunk now. 
+
+
+
+next, we shall see how hits are found first. 
+blat is moving along the query one nt by one nt. 
+
+print target sequence
+	findSource  use bsearch to locate gfSeqSource
+	be careful of target->seq->dna, it is the whole thing! don't printf it. 
+
+
+gfHitSort2 is very important for whole procedure so Jim made comparison an inline function. 
+	study it in detail. it's in genoFind.c
+
+
+
+clumpHits has a uglify dumpClumps with hitCount. I commented out the findHits, too many output lines. 
