@@ -46,7 +46,6 @@ Email: lifeng2@mail.med.upenn.edu
 
 # Let the code begin ...
 
-package SplicePL;
 
 use strict;
 use Carp;
