@@ -14,7 +14,7 @@
 	SplicePL.pm -- Detect splice junctions from paired-end RNA-seq data
 	
 =head1 SYNOPSIS
-	perl SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome=/data/share/db/human/hg19.fa.masked --genome_2bit_filename=hg19.fa.masked.2bit --flanksize=10 --processes=6
+	perl SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome_dir=/data/share/db/human/hg19 --genome_2bit_filename=hg19.2bit --flanksize=10 --processes=6
 	
 =head1 DESCRIPTION
 	SplicePL.pm is designed to run on a LINUX server with large memory and multiple CPUs.  
@@ -25,10 +25,10 @@
 
 	You run SplicePL.pm within a LINUX terminal. 
 	1. (Recommended) Use the BLAT program which uses about 4.0GB of RAM for human genome hg19, including index (1.3GB) plus sequences (3GB):
-	perl SplicePL/SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome=/data/share/db/human/hg19.fa.masked --genome_2bit_filename=hg19.fa.masked.2bit --flanksize=10 --processes=6
+	perl SplicePL/SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome_dir=/data/share/db/human/hg19.fa.masked --genome_2bit_filename=hg19.fa.masked.2bit --flanksize=10 --processes=6
 	
 	2. (optional, not recommended) Use the gfServer/gfClient programs which use 1.2GB of RAM for human genome hg19. In the alignment stage, it will load needed sequences into RAM:
-	perl SplicePL/SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome=/data/share/db/human/hg19.fa.masked --genome_2bit_filename=hg19.fa.masked.2bit --flanksize=10 --processes=14 --gfServer
+	perl SplicePL/SplicePL.pm  --forward=read1.fa --reverse=read2.fa --genome_dir=/data/share/db/human/hg19.fa.masked --genome_2bit_filename=hg19.fa.masked.2bit --flanksize=10 --processes=14 --gfServer
 	
 	The alignment output is stored in the 'temp' directory; the junction files are in the 'output' directory. 
 
@@ -88,7 +88,7 @@ sub run
                                'help|usage'    => \$USAGE,
                                'forward=s'     => \$FORWARD_FILENAME,
                                'reverse=s'     => \$REVERSE_FILENAME,
-                               'genome=s'      => \$GENOME_DIR,
+                               'genome_dir=s'      => \$GENOME_DIR,
                                'genome_2bit_filename=s' => \$GENOME_2BIT_FILENAME,
                                'processes=i'   => \$PROCESSES,
                                'tilesize=i'    => \$TILESIZE,
@@ -114,7 +114,7 @@ sub run
     {
         if (not $GENOME_DIR)
         {
-            print "Set --genome=/path/to/fasta .\n";
+            print "Set --genome_dir=/path/to/fasta .\n";
         }
 
         if (not $GENOME_2BIT_FILENAME)
@@ -300,8 +300,6 @@ if ( $GFSERVER ) {
           &mcall("MARK READS ALIGNMENT STATUS",
            \&mark_reads_status, $psl_fn, $fasta_fn);
 }
-    &mcall("MARK READS ALIGNMENT STATUS",
-           \&mark_reads_status, $psl_fn, $fasta_fn);
 
 ## unique-reads
     &mcall("FIND UNIQUE PAIRED READS",
@@ -1184,13 +1182,13 @@ sub check_total_memory
 sub usage
 {
     print <<"END_USAGE";
-Usage: $0 --forward=read1.fa --reverse=read2.fa --genome=/data/genome --genome_2bit_filename=hg19 --processes 2 
+Usage: $0 --forward=read1.fa --reverse=read2.fa --genome_dir=/data/genome --genome_2bit_filename=hg19 --processes 2 
 
 --help                  Shows this help message
 --forward=name          Name of forward read file, fasta file only
 --reverse=name          Name of reverse read file, fasta file only
---genome=dir            Directory of genome sequences for individual chromosome, ie, chr1.fa, chr2.fa, ..., chr22.fa, chrX.fa, chrY.fa, chrM.fa
---genome_2bit_filename=name      Name of genome sequence file in 2bit format, do NOT put .2bit as suffix, e.g., if file is hg19.2bit, put hg19 here.
+--genome_dir=dir            Directory of genome sequences for individual chromosome, ie, chr1.fa, chr2.fa, ..., chr22.fa, chrX.fa, chrY.fa, chrM.fa
+--genome_2bit_filename=name      Name of genome sequence file in 2bit format
 --processes             Number of processes for BLAT (default is 1)
 --tilesize              Number of tileSize (default is 11)
 --stepsize              Number of stepSize (default is 5)
