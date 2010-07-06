@@ -29,7 +29,7 @@
 
 
 =head1 PREREQUISITES  
-	Before running  SplicePL, please make sure:
+	Before running it, please make sure:
 	1. Either BLAT or gfServer/gfClient binaries is installed. The most recent version (Jun 25, 2010) is 34x7 .
 	2. A 2BIT format file is prepared from fasta files. 
 
@@ -56,13 +56,6 @@ use POSIX qw(strftime);
 
 use Getopt::Long;
 
-### run() was called only when user execute "perl SplicePL.pm "
-### however, run() was called when user "use SplicePL.pm"
-###     such that when one day SplicePL.pm becomes a real module
-###     it's easy just to use it
-### Also, this way, tests can be easily tested by
-###     perl Makefile.PL
-###     make test
 
 &run() unless caller();
 
@@ -556,20 +549,7 @@ sub retrieve_status_from_psl
 
 
 
-=head2 revcom
- Function: reverse and complement a DNA sequence
-=cut
 
-sub revcom
-{
-    my ($seq) = @_;
-
-    my $r = reverse($seq);
-    $r =~ tr/atcgATCG/tagcTAGC/;
-
-    return $r;
-
-}
 
 =head2 check_total_memory
  Function: Retrieves the memory installed on this machine
