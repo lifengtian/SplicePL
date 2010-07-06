@@ -14,7 +14,7 @@
 	blat_singleend.pl Run BLAT and Report uniquely-mpped reads above minScore
 	
 =head1 SYNOPSIS
-	perl blat_singleend.pl  --fasta reads.fa --genome_dir=/data/share/db/human/hg19 --genome_2bit_filename=hg19.2bit --minScore=60 --processes=6
+	perl blat_singleend.pl  --fasta reads.fa --genome_dir=/data/share/db/human/hg19 --genome_2bit_filename=hg19.2bit --minScore=60 --processes=6 --minidentity=90
 	
 =head1 DESCRIPTION
        This script simply run BLAT on N processors by splitting the input fasta files to N pieces; then find
