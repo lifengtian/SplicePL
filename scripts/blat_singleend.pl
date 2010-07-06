@@ -592,7 +592,7 @@ Usage: $0 --fasta=read.fa --genome_dir=/data/genome --genome_2bit_filename=hg19.
 --tilesize              Number of tileSize (default is 11)
 --stepsize              Number of stepSize (default is 5)
 --minscore              Number of minScore (default is 30)
---minidentity           Number of minIdentity (default is 0) WARNING! Use minidentity if you require minscore >= readlenght * minidentity / 100
+--minidentity           Number of minIdentity (default is 0) WARNING! Use minidentity if you require minscore >= readlength * minidentity / 100
 END_USAGE
 }
 
