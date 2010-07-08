@@ -86,7 +86,7 @@ CONTACT
 
 
 TO DO
-     1. convert junction format to bed format
+     1. convert junction format to bed format [Done. Jul 8, 2010, scripts/junction_to_bed.pl ]
      2. filter junctions by read coverage
      3. convert BLAT psl to BAM format such that RPKM can be calculated using Cufflinks
 
