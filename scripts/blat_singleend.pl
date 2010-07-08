@@ -1,6 +1,6 @@
 #!/usr/bin/perl 
 
-# PERL package for running BLAT and find uniquely-mapped reads
+# PERL script for running BLAT and find uniquely-mapped reads
 #
 # Please direct questions and support issues to <lifeng2@mail.med.upenn.edu>
 #
@@ -11,7 +11,7 @@
 # POD documentation - main docs before the code
 
 =head1 NAME
-	blat_singleend.pl Run BLAT and Report uniquely-mpped reads above minScore
+	blat_singleend.pl Run BLAT and Report uniquely-mpped reads above minscore and minidentity
 	
 =head1 SYNOPSIS
 	perl blat_singleend.pl  --fasta reads.fa --genome_dir=/data/share/db/human/hg19 --genome_2bit_filename=hg19.2bit --minScore=60 --processes=6 --minidentity=90
@@ -20,18 +20,17 @@
        This script simply run BLAT on N processors by splitting the input fasta files to N pieces; then find
        uniquely mapped reads from BLAT output.
 
-       Please select stringent threshold for minScore. The rule of thumb is, e.g., if you want at least 90 bases
-       matching the reference sequence, make --minScore=90.
-
-       In one of my benchmark study, 5 million reads out of 18 million were mapped to multiple locations of the human
-       genome with the same matching score, basically impossible for me to map them unambiguously. What about other 
-       genomes? Well, I don't know. It's your turn to share with me your results. 
+       Please select stringent threshold for minscore, which is the matches minus the 
+               mismatches minus some sort of gap penalty. The rule of thumb is, e.g., if you want at least 90 bases
+       matching the reference sequence, make --minscore=90.
+       
+       You can also assign --minidentity=90, requiring a 90% minimal identity across the whole read length.
 
 
 =head1 PREREQUISITES  
-	Before running it, please make sure:
+	Before running the script, please make sure:
 	1. Either BLAT or gfServer/gfClient binaries is installed. The most recent version (Jun 25, 2010) is 34x7 .
-	2. A 2BIT format file is prepared from fasta files. 
+	2. A 2BIT format file is prepared from reference genome fasta file(s). 
 
 =head1 TO DO
        nothing on the list yet.
@@ -331,6 +330,7 @@ TEMPLATE
 		undef $out_fh;
 	}
 
+# spawn subprocesses and wait till each of them finish
 	for my $p ( 1 .. $chunk ) {
 		my $pid = fork();
 		if ( $pid == -1 ) {

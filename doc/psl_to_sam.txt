@@ -1,0 +1,5 @@
+Heng Li wrote psl2sam.pl to convert psl to SAM format. 
+You can find it in the samtools at
+http://samtools.sourceforge.net/
+
+

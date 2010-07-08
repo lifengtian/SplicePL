@@ -1,1 +1,10 @@
-junction
+	
+	
+	The first column in a junction file is the splice junction. It has three parts:
+	1. chromosome name
+	2. last nucleotide of the donor exon
+	3. first nucleotide of the acceptor exon
+	
+	For example, a junction looks like    chr10:102286311-102286732
+	
+	Note: 	The first base of a chromosome starts from 1.
