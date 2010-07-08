@@ -70,7 +70,7 @@ OUTPUT
 	1. chromosome name
 	2. last nucleotide of the donor exon
 	3. first nucleotide of the acceptor exon
-	For example, it may look like    chr10:102286311-102286732
+	First base of the chromosome starts from 1. For example, it may look like    chr10:102286311-102286732
 	
 
 ACKNOWLEDGEMENT
