@@ -3,15 +3,19 @@ LIMITATION!!!!
      how to resolve the ambiguous reads, we choose NOT to use them. 
 
      SplicePL only works with human genome right now. The chromosome numbers are hard-coded from chr1 to chrM. 
+     I will encourage to change the source code to make it work for your genome of interest.
 
 
 INTRODUCTION
 
-	SplicePL is developed to detect de novo splice junctions from paired-end human RNA-seq data, especially for 
-        reads longer than 75 nt. With these long reads, novel exon-exon junctions can be directly identified by   
-        aligning reads to the reference genome using algorithms such as BLAT (Kent, 2002) or SSAHA2 (Ning et al., 
-        2001), rather than splitting reads into segments as in TopHat (Trapnell et al., 2009) and SpliceMap (Au et al., 
-        2010).
+	SplicePL is a simple BLAT parser and splice site filter, originally hacked in one day to test the idea of 
+        using BLAT as an aligner. After it showed us promising results, it was rewritten in Perl5. 
+
+        We find it a useful tool to detect de novo splice junctions from paired-end human RNA-seq 
+        data, especially for reads longer than 75 nt. With these long reads, novel exon-exon junctions can be directly 
+        identified by aligning reads to the reference genome using algorithms such as BLAT (Kent, 2002) or SSAHA2 (Ning 
+        et al., 2001), rather than splitting reads into segments as in TopHat (Trapnell et al., 2009) and SpliceMap (Au 
+        et al., 2010).
 
 	SplicePL detects splice junctions by a three-stage process. Initially, each read is aligned to the reference 
         genome using BLAT, followed by identifying  spliced reads across exon-exon junction.  Finally, the putative 
