@@ -1,4 +1,3 @@
-
 BLAT -- How it works? 
 Lifeng Tian
 
@@ -28,17 +27,36 @@ Kent said in the BLAT paper (2002) that the speed bottleneck for BLAT is at sort
 
 1. Compiling BLAT
 
-BLAT is downloaded from UCSC CVS
-[add cvs info]
+BLAT is downloaded from UCSC Git:
+git clone git://genome-source.cse.ucsc.edu/kent.git
+
+
+Download mysql from:
+wget http://mysql.mirrors.pair.com/Downloads/MySQL-5.5/mysql-5.5.20.tar.gz
+shell> cmake -DCMAKE_INSTALL_PREFIX:PATH=/../
+shell> make
+shell> make install
 
 After download it, set the MACHTYPE environment variable as:
-export MACHTYPE=x86_64 (or i386 i686 depends on the computer)
-export MYSQLINC=/data/share/LifengTian/src/mysql-5.1.46-linux-x86_64-glibc23/include
-export MYSQLLIBS="/data/share/LifengTian/src/mysql-5.1.46-linux-x86_64-glibc23/lib/libmysqlclient.a -lz"
+export MYSQLPATH=/usr/local/mysql
+export MACHTYPE=x86_64
+export MYSQLINC=$MYSQLPATH/include
+export MYSQLLIBS="$MYSQLPATH/lib/libmysqlclient.a -lz"
 
 
+check whether you have libpng installed (modify inc/common.mk to enable png)
+
+cd build
+kentBuild /path/to/kent output_dir
+
+or
+cd kent/src/jkOwnLib
+make
+cd kent/src/lib
+make
 cd kent/src/blat
-make all
+make    (you may see error message saying : ld: can't open output file for writing: /Users/tianl/bin/x86_64/blat, errno=2 for architecture x86_64)
+(just create the folder /Users/tianl/bin/x86_64/)
 
 
 
